@@ -96,11 +96,15 @@ async def test_refreshing_a_servers_token_keeps_the_loop_running():
     encryption = MagicMock()
     encryption.decrypt.return_value = "plain-refresh-token"
 
-    with patch(
-        "mcp_gateway.oauth.token_manager.get_token_encryption",
-        AsyncMock(return_value=encryption),
-    ), patch.object(TokenManager, "store_user_oauth_token", AsyncMock()), patch.object(
-        oidc_module.requests, "post", side_effect=_blocking(threads, response)
+    with (
+        patch(
+            "mcp_gateway.oauth.token_manager.get_token_encryption",
+            AsyncMock(return_value=encryption),
+        ),
+        patch.object(TokenManager, "store_user_oauth_token", AsyncMock()),
+        patch.object(
+            oidc_module.requests, "post", side_effect=_blocking(threads, response)
+        ),
     ):
         refreshed, ticks = await _ticks_during(
             TokenManager(db)._refresh_user_token(1, "trino", stored)
@@ -126,8 +130,9 @@ async def test_the_refresh_endpoint_reaches_the_provider_off_the_loop():
         id=1, email="tester@example.com"
     )
 
-    with patch("mcp_gateway.routes.auth.OIDCClient", return_value=oidc), patch.object(
-        TokenManager, "store_user_oauth_token", AsyncMock()
+    with (
+        patch("mcp_gateway.routes.auth.OIDCClient", return_value=oidc),
+        patch.object(TokenManager, "store_user_oauth_token", AsyncMock()),
     ):
         response = await auth_routes.refresh_access_token(
             auth_routes.RefreshTokenRequest(refresh_token="rt"), db=db
@@ -149,14 +154,14 @@ async def test_fetching_a_jwt_signing_key_keeps_the_loop_running(monkeypatch):
     db.query.return_value.filter.return_value.first.return_value = user
     claims = {"preferred_username": user.email}
 
-    with patch.object(
-        oauth_auth, "_get_jwks_client", return_value=MagicMock()
-    ), patch.object(
-        oauth_auth,
-        "_get_signing_key_with_retry",
-        side_effect=_blocking(threads, MagicMock(key="signing-key")),
-    ), patch.object(
-        oauth_auth.jwt, "decode", return_value=claims
+    with (
+        patch.object(oauth_auth, "_get_jwks_client", return_value=MagicMock()),
+        patch.object(
+            oauth_auth,
+            "_get_signing_key_with_retry",
+            side_effect=_blocking(threads, MagicMock(key="signing-key")),
+        ),
+        patch.object(oauth_auth.jwt, "decode", return_value=claims),
     ):
         result, ticks = await _ticks_during(
             oauth_auth._validate_human_user_jwt(

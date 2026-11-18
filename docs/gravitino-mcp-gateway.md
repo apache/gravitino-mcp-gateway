@@ -12,7 +12,7 @@ The MCP gateway is in beta. Its configuration and APIs may change in later relea
 :::
 
 The Gravitino MCP gateway sits between AI clients and the MCP servers they use, including the
-[Gravitino MCP server](./gravitino-mcp-server.md). People sign in once with their organization's
+[Gravitino MCP server](https://gravitino.apache.org/docs/latest/gravitino-mcp-server). People sign in once with their organization's
 identity provider. The gateway then:
 
 - Calls each MCP server with a credential that server accepts: the caller's own token, a token
@@ -36,7 +36,7 @@ person's own token, or one exchanged for Gravitino, so each call runs as that pe
 ## Requirements
 
 - An OpenID Connect provider, such as Keycloak, Okta, Auth0 or Microsoft Entra ID, which Gravitino
-  also uses for [OAuth authentication](./security/how-to-authenticate.md#oauth-mode). People's
+  also uses for [OAuth authentication](https://gravitino.apache.org/docs/latest/security/how-to-authenticate#oauth-mode). People's
   access tokens must be JWTs signed with RS256 that name their client in `azp`, `client_id` or
   `appid`, and carry an `email` claim and an `email_verified` claim that is true. Okta's and
   Auth0's access tokens leave the email out unless a claim or an action adds it. With Microsoft
@@ -59,15 +59,14 @@ person's own token, or one exchanged for Gravitino, so each call runs as that pe
 
 ## Run the gateway
 
-Build the image from the Gravitino source tree. To run the gateway without Docker, follow the
-`mcp-gateway` [README](https://github.com/apache/gravitino/blob/main/mcp-gateway/README.md).
+Build the image from this repository. To run the gateway without Docker, follow the
+[README](https://github.com/apache/gravitino-mcp-gateway/blob/main/README.md).
 
 ```shell
-./dev/docker/build-docker.sh --platform linux/amd64 --type mcp-gateway \
-  --image apache/gravitino-mcp-gateway --tag 2.0.0
+docker build -f docker/Dockerfile -t apache/gravitino-mcp-gateway .
 docker run -d -p 8000:8000 --env-file gateway.env \
   -v "$PWD/signing-key.pem:/etc/mcp-gateway/signing-key.pem:ro" \
-  apache/gravitino-mcp-gateway:2.0.0
+  apache/gravitino-mcp-gateway
 ```
 
 The gateway reads its settings from environment variables, here from `gateway.env`:
@@ -123,7 +122,7 @@ The main settings are:
 | `MAX_REQUEST_BYTES` | The largest request body the gateway reads, 10 MiB by default. |
 | `ENVIRONMENT` | `production`, which the Docker image sets, turns on the checks in [In production](#in-production). |
 
-`mcp-gateway/mcp_gateway/config.py` lists every setting and its default.
+`mcp_gateway/config.py` lists every setting and its default.
 
 ### In production
 
@@ -430,11 +429,11 @@ no such registration; with Entra, use the CLI.
 ### The CLI
 
 The `gravitino-mcp` CLI signs you in through the browser and runs a local proxy, at
-`http://localhost:8001`, which adds your token to each call. Install it from the Gravitino
-source tree:
+`http://localhost:8001`, which adds your token to each call. Install it from a checkout of
+this repository:
 
 ```shell
-pip install ./mcp-gateway
+pip install .
 export MCP_GATEWAY_URL=https://mcp-gateway.example.com
 gravitino-mcp setup
 ```

@@ -126,9 +126,10 @@ def test_a_token_for_a_named_audience_is_minted_for_the_pods_service_account(
 
 def test_the_token_is_for_the_gateways_url_without_asking_the_gateway(in_cluster):
     """Whoever answers the gateway's discovery documents must not choose the audience."""
-    with patch.object(
-        aws_token.requests, "post", return_value=_minted("t")
-    ) as post, patch("mcp_gateway_sdk.sa_token.requests.get") as get:
+    with (
+        patch.object(aws_token.requests, "post", return_value=_minted("t")) as post,
+        patch("mcp_gateway_sdk.sa_token.requests.get") as get,
+    ):
         assert get_gateway_sa_token(f"{GATEWAY}/", source="aws") == "t"
 
     get.assert_not_called()

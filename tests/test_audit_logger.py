@@ -98,9 +98,12 @@ async def test_a_failed_audit_write_does_not_fail_the_call(db_session, regular_u
 
 
 async def test_a_failed_audit_write_keeps_the_tools_own_error(db_session, regular_user):
-    with patch.object(
-        AuditLogger, "log_tool_call", side_effect=SQLAlchemyError("data too long")
-    ), pytest.raises(HTTPException):
+    with (
+        patch.object(
+            AuditLogger, "log_tool_call", side_effect=SQLAlchemyError("data too long")
+        ),
+        pytest.raises(HTTPException),
+    ):
         async with AuditLogger.track_tool_call(
             db=db_session, user=regular_user, service="logs", tool_name="t"
         ):

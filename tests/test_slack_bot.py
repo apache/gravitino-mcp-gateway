@@ -88,10 +88,13 @@ def fixture_device_data():
 @pytest.fixture(name="bot_db")
 def fixture_bot_db(db_engine):
     """The bot's own database sessions, on the test's database."""
-    with patch(SESSIONS, sessionmaker(bind=db_engine)), patch(
-        "mcp_gateway.oauth.token_manager.get_token_encryption",
-        new_callable=AsyncMock,
-        return_value=ENCRYPTION,
+    with (
+        patch(SESSIONS, sessionmaker(bind=db_engine)),
+        patch(
+            "mcp_gateway.oauth.token_manager.get_token_encryption",
+            new_callable=AsyncMock,
+            return_value=ENCRYPTION,
+        ),
     ):
         yield
 
@@ -278,9 +281,10 @@ async def test_a_failure_after_login_does_not_escape_the_background_task(
     respond = AsyncMock(side_effect=reply_error)
     db = MagicMock()
 
-    with patch(SESSIONS, lambda: db), patch(
-        "mcp_gateway.slack.app.TokenManager"
-    ) as token_manager:
+    with (
+        patch(SESSIONS, lambda: db),
+        patch("mcp_gateway.slack.app.TokenManager") as token_manager,
+    ):
         token_manager.return_value.store_user_oauth_token = AsyncMock(
             side_effect=store_error
         )
@@ -315,8 +319,9 @@ def test_the_cli_login_saves_the_tokens_the_device_flow_returns(
         token_data={"access_token": "at", "refresh_token": "rt", "expires_in": 3600},
     )
 
-    with patch("mcp_gateway_cli.auth.save_tokens") as save_tokens, patch(
-        "mcp_gateway_cli.auth.requests.get", side_effect=Exception("no network")
+    with (
+        patch("mcp_gateway_cli.auth.save_tokens") as save_tokens,
+        patch("mcp_gateway_cli.auth.requests.get", side_effect=Exception("no network")),
     ):
         assert device_flow_login("https://gw.example.com") is True
 
