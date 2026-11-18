@@ -98,7 +98,7 @@ The main settings are:
 | `GATEWAY_OAUTH_CLIENT_ID`, `GATEWAY_OAUTH_CLIENT_SECRET` | The gateway's OAuth client, for browser sign-in and token exchange. |
 | `TOKEN_EXCHANGE_STYLE` | `rfc8693`, or `entra_obo` for Entra's on-behalf-of flow, which is the default with `OIDC_PROVIDER=azure`. |
 | `JWT_AUDIENCE` | The audience that people's tokens must carry. Required. |
-| `GATEWAY_API_SCOPES` | Scopes that put `JWT_AUDIENCE` in a token, space-separated. MCP clients read them from the gateway's metadata, and the gateway's own sign-in asks for them too. With `OIDC_PROVIDER=azure`, `user_access` by default. |
+| `GATEWAY_API_SCOPES` | Scopes that put `JWT_AUDIENCE` in a token, space-separated. MCP clients read them from the gateway's metadata, and the gateway's own sign-in asks for them too. With Keycloak, also list `offline_access`, so that clients that ask for a refresh token, such as Claude Code, can sign in: Keycloak refuses a client that registered itself any scope it didn't register with. With `OIDC_PROVIDER=azure`, `user_access` by default. |
 | `GATEWAY_LOGIN_SCOPES` | Replaces the scopes of the gateway's own sign-in, space-separated: by default `openid profile email offline_access` and `GATEWAY_API_SCOPES`, or `<client ID>/.default` with `OIDC_PROVIDER=azure`. |
 | `GATEWAY_OAUTH_ADDITIONAL_CLIENT_IDS` | Other OAuth clients whose tokens the gateway accepts. Comma-separated. |
 | `GATEWAY_OAUTH_ACCEPT_ANY_CLIENT` | Accept people's tokens for `JWT_AUDIENCE` from any client of the identity provider, such as MCP clients that register themselves (RFC 7591). They must still come from the configured issuer and carry a verified email. |

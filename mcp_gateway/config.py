@@ -458,7 +458,7 @@ class Settings(BaseSettings):
         else:
             # The scopes MCP clients ask for, such as one that puts the gateway
             # in the token's audience, so the stored token is like theirs.
-            scopes += self.gateway_api_scopes
+            scopes += [s for s in self.gateway_api_scopes if s not in scopes]
         return " ".join(scopes)
 
     @property

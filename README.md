@@ -140,7 +140,7 @@ export GATEWAY_OAUTH_CLIENT_ID=mcp-gateway
 export GATEWAY_OAUTH_CLIENT_SECRET=mcp-gateway-secret
 export GATEWAY_OAUTH_ACCEPT_ANY_CLIENT=true
 export JWT_AUDIENCE=gravitino
-export GATEWAY_API_SCOPES=gravitino
+export GATEWAY_API_SCOPES="gravitino offline_access"
 export GRAVITINO_MCP_URL=http://localhost:8100/mcp
 export GRAVITINO_URI=http://localhost:8090         # alice, Gravitino's service admin, is an admin
 export USER_ID_CLAIM=preferred_username            # the first of Gravitino's principalFields
@@ -150,8 +150,9 @@ uvicorn mcp_gateway.main:app --port 8000
 
 Point an MCP client at http://localhost:8000/mcp/gravitino: it registers itself
 with Keycloak, signs you in, and the gateway forwards your token to Gravitino.
+`offline_access` lets clients such as Claude Code get a refresh token.
 To have the gateway exchange tokens instead (RFC 8693), set
-`JWT_AUDIENCE=mcp-gateway`, `GATEWAY_API_SCOPES=mcp-gateway` and
+`JWT_AUDIENCE=mcp-gateway`, `GATEWAY_API_SCOPES="mcp-gateway offline_access"` and
 `GRAVITINO_MCP_AUDIENCE=gravitino`. [setup-realm.sh](dev/keycloak/setup-realm.sh)
 shows the Keycloak settings each needs.
 
