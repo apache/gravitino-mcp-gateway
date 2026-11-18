@@ -1,0 +1,137 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A pull request keeps only its latest run. Each push to main has a group of
+  # its own, so that every push gets a result.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # The same versions the Docker image and the README use.
+  UV_VERSION: "0.12.14"
+  BLACK: "black==26.5.1"
+  ISORT: "isort==9.0.0"
+  SOURCES: mcp_gateway mcp_gateway_cli mcp_gateway_sdk tests
+
+jobs:
+  test:
+    name: Unit tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras
+      - name: Check formatting
+        # SOURCES is a list of directories, so it is split on purpose.
+        run: |
+          # shellcheck disable=SC2086
+          uv tool run --from "${BLACK}" black --check ${SOURCES}
+          # shellcheck disable=SC2086
+          uv tool run --from "${ISORT}" isort --check-only ${SOURCES}
+      - name: Pylint
+        run: |
+          # shellcheck disable=SC2086
+          uv run pylint ${SOURCES}
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras
+      - name: Start Keycloak, Gravitino and Gravitino's MCP server
+        run: |
+          docker compose -f dev/keycloak/docker-compose.yaml up -d
+          # The setup containers exit once Keycloak and Gravitino are up and configured.
+          for c in $(docker compose -f dev/keycloak/docker-compose.yaml ps -a --format '{{.Name}}' | grep setup); do
+            code=$(docker wait "$c")
+            echo "$c exited with $code"
+            [ "$code" = 0 ] || { docker logs "$c"; exit 1; }
+          done
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:8100/mcp; then exit 0; fi
+            sleep 2
+          done
+          echo "Gravitino's MCP server didn't start"
+          exit 1
+      - name: Integration tests
+        env:
+          MCP_GATEWAY_KEYCLOAK_TEST: "1"
+        run: uv run pytest -m integration tests/integration
+      - name: Show service logs
+        if: failure()
+        run: docker compose -f dev/keycloak/docker-compose.yaml logs --tail 200
+      - name: Stop the services
+        if: always()
+        run: docker compose -f dev/keycloak/docker-compose.yaml down
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker build -f docker/Dockerfile -t gravitino-mcp-gateway:ci .
+      - name: Start the image
+        run: |
+          docker run -d --name gateway -p 8000:8000 \
+            -e ENVIRONMENT=development \
+            -e JWT_SECRET_KEY="$(openssl rand -hex 32)" \
+            -e TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+            -e JWT_AUDIENCE=ci \
+            -e OIDC_ISSUER=https://idp.example.com \
+            -e OIDC_JWKS_URI=https://idp.example.com/jwks \
+            gravitino-mcp-gateway:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then exit 0; fi
+            sleep 2
+          done
+          docker logs gateway
+          exit 1
