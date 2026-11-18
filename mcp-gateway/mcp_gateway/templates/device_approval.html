@@ -1,0 +1,304 @@
+{#
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+-#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device sign-in - Apache Gravitino MCP Gateway</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 48px;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        .logo h1 {
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+        
+        .logo p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 24px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 2px;
+            font-weight: 600;
+            text-transform: uppercase;
+            transition: border-color 0.2s;
+        }
+        
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button.secondary {
+            background: #f3f4f6;
+            color: #374151;
+            margin-top: 12px;
+        }
+        
+        button.secondary:hover {
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+        }
+        
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+        
+        .alert-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+        
+        .alert-success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+        }
+        
+        .user-info {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #6b7280;
+            text-align: center;
+        }
+        
+        .user-info strong {
+            color: #374151;
+        }
+        
+        .instructions {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #92400e;
+        }
+        
+        .instructions strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+        
+        .confirmation-panel {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #374151;
+        }
+        
+        .confirmation-panel dl {
+            margin: 0;
+        }
+        
+        .confirmation-panel dt {
+            font-weight: 600;
+            margin-top: 12px;
+        }
+        
+        .confirmation-panel dt:first-child {
+            margin-top: 0;
+        }
+        
+        .confirmation-panel dd {
+            margin: 4px 0 0 0;
+            color: #6b7280;
+        }
+        
+        .code-display {
+            font-size: 28px;
+            letter-spacing: 4px;
+            font-weight: 700;
+            text-align: center;
+            color: #111827;
+            margin: 8px 0 0 0;
+        }
+        
+        .risk-notice {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #9a3412;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>Apache Gravitino MCP Gateway</h1>
+            <p>Device sign-in</p>
+        </div>
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+        {% if success %}
+        <div class="alert alert-success">{{ success }}</div>
+        {% elif entry %}
+        <div class="user-info">
+            Signed in as <strong>{{ user.username }}</strong>
+        </div>
+        <div class="confirmation-panel">
+            <dl>
+                <dt>Code</dt>
+                <dd class="code-display">{{ entry.user_code }}</dd>
+                {# What the requester says of itself: anyone can say they are the CLI. #}
+                <dt>Says it is</dt>
+                <dd><strong>{{ client_name }}</strong></dd>
+                <dt>From</dt>
+                <dd>{{ entry.requested_from or "an unknown address" }}{% if entry.requested_by_agent %}, which says it runs {{ entry.requested_by_agent }}{% endif %}</dd>
+                <dt>At</dt>
+                <dd>{{ entry.created_at.strftime("%Y-%m-%d %H:%M:%S") }} UTC</dd>
+            </dl>
+        </div>
+        <div class="risk-notice">
+            <strong>Approve only a code you just got from your own CLI.</strong>
+            Approving gives whoever asked for this code your gateway sign-in, with
+            which they can call MCP servers as you. If someone sent you this code
+            or a link to this page, deny it.
+        </div>
+        <form method="POST" action="/device/approve">
+            <input type="hidden" name="user_code" value="{{ entry.user_code }}">
+            <input type="hidden" name="approval_csrf" value="{{ entry.approval_csrf }}">
+            <button type="submit" name="action" value="approve">Approve</button>
+            <button type="submit" name="action" value="deny" class="secondary">Deny</button>
+        </form>
+        {% else %}
+        <div class="user-info">
+            Signed in as <strong>{{ user.username }}</strong>
+        </div>
+        <div class="instructions">
+            Type the code your CLI shows, then check the request before you approve it.
+        </div>
+        <form method="POST" action="/device">
+            <div class="form-group">
+                <label for="user_code">Code</label>
+                <input
+                    type="text"
+                    id="user_code"
+                    name="user_code"
+                    placeholder="XXXX-XXXX"
+                    maxlength="9"
+                    autocomplete="off"
+                    required
+                    autofocus
+                >
+            </div>
+            <button type="submit">Continue</button>
+        </form>
+        {% endif %}
+    </div>
+    <script>
+        const input = document.getElementById('user_code');
+        if (input) {
+            input.addEventListener('input', function (event) {
+                let value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (value.length > 4) {
+                    value = value.slice(0, 4) + '-' + value.slice(4, 8);
+                }
+                event.target.value = value;
+            });
+        }
+    </script>
+</body>
+</html>
