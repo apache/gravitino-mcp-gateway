@@ -217,6 +217,7 @@ docker build -f docker/Dockerfile -t apache/gravitino-mcp-gateway .
 
 - Mailing list: [dev@gravitino.apache.org](https://lists.apache.org/list.html?dev@gravitino.apache.org)
 - Issues and pull requests: on this repository
+- Security issues: report them privately, as [SECURITY.md](SECURITY.md) describes
 
 ## License
 
