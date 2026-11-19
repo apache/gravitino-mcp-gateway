@@ -17,7 +17,7 @@
 
 """The MCP servers a caller can see, and whether they are connected to each.
 
-Admins manage servers through /api/admin/mcp (mcp_admin.py); this list says
+Admins manage servers through /api/v1/admin/mcp (mcp_admin.py); this list says
 nothing about how the gateway reaches or signs in to a server.
 """
 
@@ -34,7 +34,7 @@ from ..models import MCPCatalog, OAuthToken, ServiceAccountCredentials, User
 from ..oauth.token_manager import token_expired
 from ..oauth_auth import get_user_from_bearer_token
 
-router = APIRouter(prefix="/api/catalog", tags=["mcp-catalog"])
+router = APIRouter(prefix="/api/v1/catalog", tags=["mcp-catalog"])
 
 
 class MCPCatalogResponse(BaseModel):

@@ -123,7 +123,7 @@ def services():
     gateway_url = get_gateway_url()
     try:
         response = requests.get(
-            f"{gateway_url}/api/catalog/mcps",
+            f"{gateway_url}/api/v1/catalog/mcps",
             headers={"Authorization": f"Bearer {get_access_token()}"},
             timeout=_API_TIMEOUT_SECONDS,
         )
@@ -236,7 +236,7 @@ def whoami():
     try:
         # Get current user info
         user_response = requests.get(
-            f"{gateway_url}/api/users/me",
+            f"{gateway_url}/api/v1/users/me",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=_API_TIMEOUT_SECONDS,
         )

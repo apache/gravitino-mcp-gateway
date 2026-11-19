@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Who the caller is, for the CLI's whoami (GET /api/users/me)."""
+"""Who the caller is, for the CLI's whoami (GET /api/v1/users/me)."""
 
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -24,7 +24,7 @@ import pytest
 
 from mcp_gateway.models import User
 
-ME = "/api/users/me"
+ME = "/api/v1/users/me"
 
 
 def test_who_am_i_needs_a_bearer_token(client):

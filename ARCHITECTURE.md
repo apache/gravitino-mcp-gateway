@@ -71,7 +71,7 @@ calls each server with a credential that server accepts, and audits the calls.
   the provider's redirect to the browser that started the sign-in. The cookie
   is only for the gateway's own pages: where a sign-in ends, connecting to
   servers with their own sign-in, and the device flow.
-- **Device flow** (`/api/device/*`, `/device`): the CLI and the Slack bot get
+- **Device flow** (`/api/v1/device/*`, `/device`): the CLI and the Slack bot get
   the user's gateway token once the user types the code, checks where the
   request came from, and approves it (RFC 8628 section 5.4).
 - **Discovery**: `/.well-known/oauth-protected-resource` (RFC 9728) tells MCP
@@ -85,8 +85,8 @@ Gravitino's service admins.
 
 ### Access control
 
-Admins register MCP servers (`/api/admin/mcp`). A server is open to every
-user, or requires an admin to approve each request (`/api/mcp-access/*`).
+Admins register MCP servers (`/api/v1/admin/mcp`). A server is open to every
+user, or requires an admin to approve each request (`/api/v1/mcp-access/*`).
 Approvals can expire, except on open servers. An `admin_only` server is for
 admins: to other people it answers as if it did not exist. Service accounts may
 call only the servers listed for them, admin-only ones included.

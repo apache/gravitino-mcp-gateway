@@ -37,7 +37,7 @@ from ..database import get_db
 from ..models import AuditLog, User
 from ..oauth_auth import get_user_from_bearer_token
 
-router = APIRouter(prefix="/api/audit", tags=["Audit & Analytics"])
+router = APIRouter(prefix="/api/v1/audit", tags=["Audit & Analytics"])
 
 
 # The longest periods that the days, hours and minutes parameters accept.

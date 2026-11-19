@@ -36,7 +36,7 @@ from ..slack_service import (
     notify_request_reviewed,
 )
 
-router = APIRouter(prefix="/api/mcp-access", tags=["mcp-access"])
+router = APIRouter(prefix="/api/v1/mcp-access", tags=["mcp-access"])
 
 _MAX_PAGE_SIZE = 100
 

@@ -304,7 +304,7 @@ def test_a_person_signs_in_in_the_browser_and_then_on_the_cli(forwarding_gateway
         "Cookie": f"{session_cookie_name()}={callback.cookies[session_cookie_name()]}"
     }
     code = forwarding_gateway.post(
-        "/api/device/code", json={"client_id": "gravitino-mcp-cli"}
+        "/api/v1/device/code", json={"client_id": "gravitino-mcp-cli"}
     ).json()
     # The person types the code their CLI shows.
     page = forwarding_gateway.post(
@@ -322,7 +322,7 @@ def test_a_person_signs_in_in_the_browser_and_then_on_the_cli(forwarding_gateway
         headers=session,
     )
     tokens = forwarding_gateway.post(
-        "/api/device/token",
+        "/api/v1/device/token",
         json={"device_code": code["device_code"], "client_id": "gravitino-mcp-cli"},
     ).json()
 
@@ -351,7 +351,7 @@ def test_gravitinos_service_admins_are_the_gateways_admins(
 
     def is_admin(user):
         headers = {"Authorization": f"Bearer {_token(user, scope)}"}
-        return gateway.get("/api/users/me", headers=headers).json()["is_admin"]
+        return gateway.get("/api/v1/users/me", headers=headers).json()["is_admin"]
 
     assert is_admin("alice") is True
     assert is_admin("bob") is False

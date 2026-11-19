@@ -25,7 +25,7 @@ import pytest
 
 from mcp_gateway.models import MCPCatalog, OAuthToken, ServiceAccountCredentials
 
-CATALOG = "/api/catalog/mcps"
+CATALOG = "/api/v1/catalog/mcps"
 
 
 def _mcp(db, service_id, **overrides):
@@ -143,7 +143,7 @@ _SERVER_CONFIG = {
 def test_the_catalog_never_says_how_the_gateway_reaches_a_server(
     client, db_session, as_user, request, caller
 ):
-    """Admins read server configuration from /api/admin/mcp."""
+    """Admins read server configuration from /api/v1/admin/mcp."""
     _mcp(db_session, "trino", **_SERVER_CONFIG)
     as_user(request.getfixturevalue(caller))
 

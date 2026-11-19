@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Tests for POST /api/sa/user-tokens: a bot gets a person's Slack token once they approve."""
+"""Tests for POST /api/v1/sa/user-tokens: a bot gets a person's Slack token once they approve."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def _post(client, body: dict | bytes | None = None):
     if not isinstance(body, bytes):
         body = json.dumps(body or _signed()).encode()
     return client.post(
-        "/api/sa/user-tokens",
+        "/api/v1/sa/user-tokens",
         content=body,
         headers={"Content-Type": "application/json"},
     )
@@ -246,7 +246,7 @@ class TestCaller:
     def test_the_route_does_not_exist_unless_turned_on(self, client, monkeypatch):
         monkeypatch.setattr(settings, "SLACK_USER_TOKENS_ENABLED", False)
 
-        assert client.post("/api/sa/user-tokens", json={}).status_code == 404
+        assert client.post("/api/v1/sa/user-tokens", json={}).status_code == 404
 
 
 # ---------------------------------------------------------------------------

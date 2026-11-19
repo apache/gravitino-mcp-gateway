@@ -35,8 +35,8 @@ from mcp_gateway.models import DeviceCode, OAuthToken
 from mcp_gateway.routes import device_flow
 from mcp_gateway.sessions import SESSION_TYPE, session_cookie_name
 
-CODE_URL = "/api/device/code"
-TOKEN_URL = "/api/device/token"
+CODE_URL = "/api/v1/device/code"
+TOKEN_URL = "/api/v1/device/token"
 USER_CODE = "WXYZ-1234"
 
 

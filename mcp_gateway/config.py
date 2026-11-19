@@ -245,7 +245,7 @@ class Settings(BaseSettings):
     SLACK_APP_TOKEN: Optional[str] = None
     SLACK_CHANNEL_ID: Optional[str] = None
     # Lets Slack apps' service accounts get a person's token once they approve in
-    # Slack (POST /api/sa/user-tokens). Off unless a deployment needs it.
+    # Slack (POST /api/v1/sa/user-tokens). Off unless a deployment needs it.
     SLACK_USER_TOKENS_ENABLED: bool = False
 
     @property

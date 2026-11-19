@@ -30,9 +30,9 @@ from sqlalchemy.orm import sessionmaker
 from mcp_gateway.models import MCPAccessRequest, MCPCatalog, MCPUserPermission, User
 from mcp_gateway.routes import mcp_access
 
-REQUEST = "/api/mcp-access/request"
-REVIEW = "/api/mcp-access/admin/review"
-PERMISSIONS = "/api/mcp-access/admin/permissions"
+REQUEST = "/api/v1/mcp-access/request"
+REVIEW = "/api/v1/mcp-access/admin/review"
+PERMISSIONS = "/api/v1/mcp-access/admin/permissions"
 
 # Captured before the autouse fixture below replaces the module attribute.
 _real_fire_and_forget = mcp_access._fire_and_forget
@@ -168,7 +168,7 @@ def test_my_requests_shows_only_mine_with_their_reviewer(
     _request_row(db_session, _user(db_session, "someone-else"), mcp)
     as_user(regular_user)
 
-    body = client.get("/api/mcp-access/my-requests").json()
+    body = client.get("/api/v1/mcp-access/my-requests").json()
 
     assert [(r["justification"], r["reviewer_username"]) for r in body] == [
         ("mine", admin_user.username)
@@ -187,7 +187,7 @@ def test_my_permissions_shows_only_mine_for_servers_that_still_exist(
     db_session.commit()
     as_user(regular_user)
 
-    body = client.get("/api/mcp-access/my-permissions").json()
+    body = client.get("/api/v1/mcp-access/my-permissions").json()
 
     assert [(p["mcp_service_id"], p["user_id"]) for p in body] == [
         ("live", regular_user.id)
@@ -202,8 +202,8 @@ def test_my_permissions_shows_only_mine_for_servers_that_still_exist(
 @pytest.mark.parametrize(
     "method,path",
     [
-        ("get", "/api/mcp-access/admin/pending"),
-        ("get", "/api/mcp-access/admin/all"),
+        ("get", "/api/v1/mcp-access/admin/pending"),
+        ("get", "/api/v1/mcp-access/admin/all"),
         ("get", PERMISSIONS),
         ("delete", f"{PERMISSIONS}/1"),
     ],
@@ -238,7 +238,7 @@ def test_admin_all_filters_by_server_and_status(
     as_user(admin_user)
 
     body = client.get(
-        "/api/mcp-access/admin/all",
+        "/api/v1/mcp-access/admin/all",
         params={"mcp_id": wanted.id, "status_filter": "pending"},
     ).json()
 
@@ -253,7 +253,7 @@ def test_admin_all_reports_unknown_user_for_orphaned_request(
     db_session.commit()
     as_user(admin_user)
 
-    body = client.get("/api/mcp-access/admin/all").json()
+    body = client.get("/api/v1/mcp-access/admin/all").json()
 
     assert body["items"][0]["username"] == "Unknown"
 
@@ -283,7 +283,7 @@ def test_admin_permissions_lists_granter_and_expiry_and_filters_by_server(
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/mcp-access/admin/pending", "/api/mcp-access/admin/all", PERMISSIONS],
+    ["/api/v1/mcp-access/admin/pending", "/api/v1/mcp-access/admin/all", PERMISSIONS],
 )
 @pytest.mark.parametrize("params", [{"page_size": 101}, {"page": 0}])
 def test_an_admin_list_pages_within_bounds(client, admin_user, as_user, path, params):
@@ -299,7 +299,9 @@ def test_an_admin_list_counts_every_row_not_just_the_page(
         _request_row(db_session, regular_user, _mcp(db_session, service_id))
     as_user(admin_user)
 
-    body = client.get("/api/mcp-access/admin/pending", params={"page_size": 2}).json()
+    body = client.get(
+        "/api/v1/mcp-access/admin/pending", params={"page_size": 2}
+    ).json()
 
     assert (len(body["items"]), body["total"]) == (2, 3)
 

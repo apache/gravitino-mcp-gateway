@@ -40,7 +40,7 @@ from ..models import (
 from ..oauth.mcp_service_auth import refused_secret_refs
 from ..oauth_auth import require_admin
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 
 

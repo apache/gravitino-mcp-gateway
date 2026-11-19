@@ -68,11 +68,11 @@ def request_device_code(
     client_id: str = DEFAULT_CLIENT_ID,
     timeout: int = 10,
 ) -> DeviceCodeData:
-    """POST /api/device/code — same request body as gravitino-mcp login."""
+    """POST /api/v1/device/code — same request body as gravitino-mcp login."""
     logger.info("Requesting device code from %s", gateway_url)
     base = gateway_url.rstrip("/")
     response = requests.post(
-        f"{base}/api/device/code",
+        f"{base}/api/v1/device/code",
         json={"client_id": client_id},
         timeout=timeout,
     )
@@ -108,11 +108,11 @@ def poll_device_token_once(
     *,
     timeout: int = 10,
 ) -> PollResult:
-    """POST /api/device/token — one poll attempt."""
+    """POST /api/v1/device/token — one poll attempt."""
     base = gateway_url.rstrip("/")
     try:
         response = requests.post(
-            f"{base}/api/device/token",
+            f"{base}/api/v1/device/token",
             json={
                 "device_code": device_code,
                 "grant_type": DEVICE_GRANT_TYPE,
