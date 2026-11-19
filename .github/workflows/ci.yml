@@ -20,14 +20,14 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "branch-*"]
 
 permissions:
   contents: read
 
 concurrency:
-  # A pull request keeps only its latest run. Each push to main has a group of
-  # its own, so that every push gets a result.
+  # A pull request keeps only its latest run. Each push to main or a release
+  # branch has a group of its own, so that every push gets a result.
   group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
