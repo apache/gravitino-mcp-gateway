@@ -29,7 +29,7 @@ import json
 import os
 import re
 import secrets
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import httpx
 import pytest
@@ -82,9 +82,28 @@ def _sign_in(authorize_url: str, user: str) -> str:
     for cookie in browser.cookies.jar:
         cookie.secure = False
     action = re.search(r'id="kc-form-login"[^>]*action="([^"]+)"', page.text)
+    assert action, f"No login page: {page.status_code} {page.headers.get('location')}"
     resp = browser.post(
         html.unescape(action.group(1)),
         data={"username": user, "password": user, "credentialId": ""},
+    )
+    assert resp.status_code == 302, resp.text
+    location = resp.headers["location"]
+    if "execution=OAUTH_GRANT" in location:
+        # Keycloak asks people to consent to clients that registered themselves.
+        location = _consent(browser, location)
+    return location
+
+
+def _consent(browser: httpx.Client, url: str) -> str:
+    """Accept Keycloak's consent page; return where Keycloak redirects next."""
+    page = browser.get(url)
+    action = re.search(r'action="([^"]*login-actions/consent[^"]*)"', page.text)
+    code = re.search(r'name="code" value="([^"]+)"', page.text)
+    assert action and code, f"No consent page: {page.status_code}"
+    resp = browser.post(
+        urljoin(url, html.unescape(action.group(1))),
+        data={"code": code.group(1), "accept": "Yes"},
     )
     assert resp.status_code == 302, resp.text
     return resp.headers["location"]
@@ -169,7 +188,7 @@ def fixture_forwarding_gateway(client, db_session, monkeypatch):
         db_session,
         monkeypatch,
         JWT_AUDIENCE="gravitino",
-        GATEWAY_API_SCOPES="gravitino",
+        GATEWAY_API_SCOPES="gravitino offline_access",
     )
 
 
@@ -181,7 +200,7 @@ def fixture_exchanging_gateway(client, db_session, monkeypatch):
         db_session,
         monkeypatch,
         JWT_AUDIENCE="mcp-gateway",
-        GATEWAY_API_SCOPES="mcp-gateway",
+        GATEWAY_API_SCOPES="mcp-gateway offline_access",
         GRAVITINO_MCP_AUDIENCE="gravitino",
     )
 
@@ -218,6 +237,8 @@ def test_a_token_for_the_gateway_is_exchanged_for_gravitino(exchanging_gateway):
 
 
 def test_an_mcp_client_that_registers_itself_reaches_gravitino(forwarding_gateway):
+    # Like Claude Code: register with the advertised scopes, then ask for a
+    # refresh token too. Keycloak refuses a scope the client didn't register.
     resource = forwarding_gateway.get("/.well-known/oauth-protected-resource").json()
     [issuer] = resource["authorization_servers"]
     provider = httpx.get(f"{issuer}/.well-known/openid-configuration").json()
@@ -226,7 +247,7 @@ def test_an_mcp_client_that_registers_itself_reaches_gravitino(forwarding_gatewa
         json={
             "client_name": "Integration test",
             "redirect_uris": [CLIENT_REDIRECT],
-            "grant_types": ["authorization_code"],
+            "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
             "scope": " ".join(resource["scopes_supported"]),
@@ -242,7 +263,7 @@ def test_an_mcp_client_that_registers_itself_reaches_gravitino(forwarding_gatewa
         "client_id": registered["client_id"],
         "response_type": "code",
         "redirect_uri": CLIENT_REDIRECT,
-        "scope": " ".join(resource["scopes_supported"]),
+        "scope": " ".join([*resource["scopes_supported"], "offline_access"]),
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
@@ -260,6 +281,7 @@ def test_an_mcp_client_that_registers_itself_reaches_gravitino(forwarding_gatewa
         },
     ).json()
 
+    assert "refresh_token" in tokens, tokens
     result = _call(
         forwarding_gateway, tokens["access_token"], "tools/call", LIST_CATALOGS
     )["result"]

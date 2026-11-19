@@ -288,8 +288,22 @@ def test_signing_in_sends_the_browser_to_the_provider_with_a_state_tied_to_it(
             {"OIDC_PROVIDER": "keycloak", "GATEWAY_API_SCOPES": "mcp-gateway"},
             "openid profile email offline_access mcp-gateway",
         ),
+        # Listed for MCP clients that ask for a refresh token; asked for once.
+        (
+            {
+                "OIDC_PROVIDER": "keycloak",
+                "GATEWAY_API_SCOPES": "gravitino offline_access",
+            },
+            "openid profile email offline_access gravitino",
+        ),
     ],
-    ids=["default", "entra", "configured", "mcp clients' scopes"],
+    ids=[
+        "default",
+        "entra",
+        "configured",
+        "mcp clients' scopes",
+        "offline_access listed",
+    ],
 )
 def test_signing_in_asks_for_the_scopes_the_gateway_needs(
     client, oauth_client, monkeypatch, configured, scope
