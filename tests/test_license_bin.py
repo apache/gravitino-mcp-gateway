@@ -25,6 +25,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
 from packaging.markers import Marker, default_environment
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -34,23 +35,25 @@ IMAGE_ENVIRONMENT = {
     **default_environment(),
     "implementation_name": "cpython",
     "os_name": "posix",
-    "platform_machine": "x86_64",
     "platform_python_implementation": "CPython",
     "platform_system": "Linux",
     "python_full_version": "3.11.0",
     "python_version": "3.11",
     "sys_platform": "linux",
 }
+# The architectures the image is built for, as platform_machine names them.
+MACHINES = ("x86_64", "aarch64")
 # Components of the image that are not Python packages from uv.lock.
 OTHER_COMPONENTS: set = set()
 
 
-def _applies(dependency):
+def _applies(dependency, environment):
     marker = dependency.get("marker")
-    return marker is None or Marker(marker).evaluate(IMAGE_ENVIRONMENT)
+    return marker is None or Marker(marker).evaluate(environment)
 
 
-def _image_packages():
+def _image_packages(machine):
+    environment = {**IMAGE_ENVIRONMENT, "platform_machine": machine}
     lock = tomllib.loads((PROJECT_DIR / "uv.lock").read_text(encoding="utf-8"))
     packages = {package["name"]: package for package in lock["package"]}
     root = packages[ROOT_PACKAGE]
@@ -61,7 +64,7 @@ def _image_packages():
     installed = set()
     while wanted:
         dependency = wanted.pop()
-        if not _applies(dependency):
+        if not _applies(dependency, environment):
             continue
         package = packages[dependency["name"]]
         for extra in dependency.get("extra", []):
@@ -82,19 +85,20 @@ def _listed_components():
     )
 
 
-def test_license_bin_lists_every_package_the_image_installs():
-    expected = _image_packages()
-    listed = _listed_components()
+@pytest.mark.parametrize("machine", MACHINES)
+def test_license_bin_lists_every_package_the_image_installs(machine):
+    assert sorted(_image_packages(machine) - _listed_components()) == []
 
-    assert {
-        "missing": sorted(expected - listed),
-        "not installed": sorted(listed - expected - OTHER_COMPONENTS),
-    } == {"missing": [], "not installed": []}
+
+def test_license_bin_lists_only_packages_an_image_installs():
+    installed = set().union(*(_image_packages(machine) for machine in MACHINES))
+
+    assert sorted(_listed_components() - installed - OTHER_COMPONENTS) == []
 
 
 def test_the_image_package_list_follows_extras_and_markers():
-    """A resolver that lost extras or markers would make the test above vacuous."""
-    packages = _image_packages()
+    """A resolver that lost extras or markers would make the tests above vacuous."""
+    packages = _image_packages("x86_64")
 
     assert {"boto3", "slack-bolt", "uvloop", "httptools"} <= packages
     assert "colorama" not in packages  # Windows only
