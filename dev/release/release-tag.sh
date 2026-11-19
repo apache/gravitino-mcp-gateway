@@ -35,9 +35,8 @@ git ls-remote --exit-code --heads "$GIT_REPO" "$BRANCH" >/dev/null ||
 for tag in "$RC_TAG" "$RELEASE_TAG"; do
   [[ -z "$(git ls-remote --tags "$GIT_REPO" "refs/tags/$tag")" ]] || die "$tag already exists"
 done
-[[ ! -e "$WORK_DIR" ]] || die "$WORK_DIR exists; remove it to start over"
-
 info "Cloning $BRANCH into $WORK_DIR"
+fresh_dir "$WORK_DIR"
 git clone --quiet --branch "$BRANCH" "$GIT_REPO" "$WORK_DIR"
 use_checkout_identity "$WORK_DIR"
 cd "$WORK_DIR"
@@ -49,9 +48,12 @@ set_version() {
   sed -i.bak "s/^version = \".*\"$/version = \"$version\"/" pyproject.toml
   rm pyproject.toml.bak
   uv lock --quiet
+  local changes
+  changes=$(git diff --numstat)
+  [[ -n "$changes" ]] || die "$BRANCH is already at version $version"
   # One line in each file, so a different uv can't rewrite the lock file unseen.
-  [[ "$(git diff --numstat)" == $'1\t1\tpyproject.toml\n1\t1\tuv.lock' ]] ||
-    die "setting the version changed more than its two lines: $(git diff --stat)"
+  [[ "$changes" == $'1\t1\tpyproject.toml\n1\t1\tuv.lock' ]] ||
+    die "setting the version should change one line in pyproject.toml and one in uv.lock, not: $(git diff --stat)"
   git commit --quiet --all --message "$2"
 }
 

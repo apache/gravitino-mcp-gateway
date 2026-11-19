@@ -38,7 +38,7 @@ IMAGE="${RELEASE_DOCKER_IMAGE:-apache/gravitino-mcp-gateway}"
 BUILDER="gravitino-mcp-gateway"
 SOURCE_RELEASE="$SOURCE_NAME-$VERSION-src"
 WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
+trap 'stop_gpg_agent; rm -rf "$WORK_DIR"' EXIT
 
 info "Checking the source release in $DIST_RELEASE/$VERSION"
 svn export --quiet "$DIST_RELEASE/$VERSION" "$WORK_DIR/files"
@@ -54,6 +54,15 @@ tar -xzf "$WORK_DIR/files/$SOURCE_RELEASE.tar.gz" -C "$WORK_DIR"
 # A builder that can build for both architectures, made once.
 docker buildx inspect "$BUILDER" >/dev/null 2>&1 ||
   docker buildx create --name "$BUILDER" --driver docker-container >/dev/null
+
+# latest is only for the newest release, so that it never moves back.
+if [[ "$TAG_LATEST" == true ]]; then
+  for entry in $(svn ls "$DIST_RELEASE" | tr -d /); do
+    if [[ "$entry" =~ $VERSION_PATTERN ]] && version_lower "$VERSION" "$entry"; then
+      die "$entry is newer than $VERSION in dist/release, so leave out -l"
+    fi
+  done
+fi
 
 NAMES=("$IMAGE:$VERSION")
 [[ "$TAG_LATEST" == true ]] && NAMES+=("$IMAGE:latest")

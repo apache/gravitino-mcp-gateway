@@ -39,6 +39,9 @@ WORK_ROOT="${RELEASE_WORK_DIR:-$HOME/gravitino-mcp-gateway-release}"
 SOURCE_NAME="gravitino-mcp-gateway"
 PYTHON_NAME="apache_gravitino_mcp_gateway"
 
+# A release version: three numbers without leading zeros, such as 0.1.0.
+VERSION_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+
 DRY_RUN=false
 
 info() { echo "==> $*"; }
@@ -98,7 +101,7 @@ parse_args() {
   shift $((OPTIND - 1))
   VERSION="${1:-}"
   RC="${2:-}"
-  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "$usage"
+  [[ "$VERSION" =~ $VERSION_PATTERN ]] || die "$usage"
   RELEASE_TAG="v$VERSION"
   if [[ "$needs_rc" == true ]]; then
     [[ "$RC" =~ ^[1-9][0-9]*$ ]] || die "$usage"
@@ -111,6 +114,34 @@ parse_args() {
 release_branch() {
   local major_minor=${1%.*}
   echo "branch-$major_minor"
+}
+
+# Whether release version $1 is lower than $2.
+version_lower() {
+  local a b i
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
+  for i in 0 1 2; do
+    ((a[i] < b[i])) && return 0
+    ((a[i] > b[i])) && return 1
+  done
+  return 1
+}
+
+# Whether an SVN URL exists. Fails on errors other than "not found", such as
+# a network or sign-in problem, rather than treating them as "doesn't exist".
+svn_exists() {
+  local output
+  output=$(svn info "$1" 2>&1) && return 0
+  [[ "$output" == *E170000* || "$output" == *W170000* || "$output" == *E160013* || "$output" == *W160013* ]] ||
+    die "svn info $1: $output"
+  return 1
+}
+
+# Replaces a work directory left by an earlier run, dry or not.
+fresh_dir() {
+  rm -rf "$1"
+  mkdir -p "$1"
 }
 
 # Sets a clone's git identity to that of the checkout the scripts run from,
@@ -143,13 +174,20 @@ release_files() {
 }
 
 # Makes a keyring of its own in a directory, holding only the keys in KEYS,
-# so that signatures are checked against the published KEYS alone.
+# so that signatures are checked against the published KEYS alone. The
+# directory's path must be short, as gpg's sockets go in it.
 use_keys_keyring() {
-  local keys
+  local keys output
   export GNUPGHOME="$1/gnupg"
   mkdir -m 700 "$GNUPGHOME"
   keys=$(curl --fail --silent --show-error "$KEYS_URL") || die "can't download $KEYS_URL"
-  gpg --batch --quiet --import <<<"$keys" 2>/dev/null || die "$KEYS_URL has no keys to import"
+  output=$(gpg --batch --quiet --import <<<"$keys" 2>&1) || die "can't import the keys in $KEYS_URL: $output"
+}
+
+# Stops the gpg agent a keyring of its own may have started.
+stop_gpg_agent() {
+  [[ -n "${GNUPGHOME:-}" && -d "$GNUPGHOME" ]] && gpgconf --homedir "$GNUPGHOME" --kill all >/dev/null 2>&1
+  return 0
 }
 
 # Fails unless a directory holds exactly a release candidate's files.

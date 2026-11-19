@@ -54,6 +54,7 @@ done
 ok "all 9 files are there"
 
 use_keys_keyring "$WORK_DIR"
+trap stop_gpg_agent EXIT
 cd "$FILES_DIR"
 for signature in *.asc; do
   gpg --batch --verify "$signature" "${signature%.asc}" 2>/dev/null || die "$signature doesn't verify against $KEYS_URL"
@@ -91,10 +92,12 @@ check_headers() {
   ok "every file has the license header (Apache SkyWalking Eyes ${eyes#v})"
 }
 
+SKIPPED=""
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
   check_headers
 else
-  echo "SKIPPED: the license header check needs Docker"
+  SKIPPED="the license headers, which need Docker"
+  echo "SKIPPED: $SKIPPED"
 fi
 
 info "Building the source release and running the unit tests"
@@ -109,4 +112,9 @@ uv pip install --quiet --python "$WORK_DIR/wheel-venv" "$FILES_DIR/$PYTHON_NAME-
 ok "the wheel installs and runs gravitino-mcp"
 
 echo
-echo "All checks passed. The unpacked release is in $WORK_DIR"
+if [[ -n "$SKIPPED" ]]; then
+  echo "All checks passed, except $SKIPPED: check them before you vote."
+else
+  echo "All checks passed."
+fi
+echo "The unpacked release is in $WORK_DIR"

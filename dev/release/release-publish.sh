@@ -35,11 +35,9 @@ RELEASE_URL="$DIST_RELEASE/$VERSION"
 FILES_DIR="$WORK_ROOT/$VERSION-rc$RC/publish"
 PYTHON_PACKAGES=("$FILES_DIR/$PYTHON_NAME-$VERSION.tar.gz" "$FILES_DIR/$PYTHON_NAME-$VERSION-py3-none-any.whl")
 
-exists() { svn info "$1" >/dev/null 2>&1; }
-
-if exists "$RELEASE_URL"; then
+if svn_exists "$RELEASE_URL"; then
   SOURCE_URL="$RELEASE_URL"
-elif exists "$STAGE_URL"; then
+elif svn_exists "$STAGE_URL"; then
   SOURCE_URL="$STAGE_URL"
 else
   die "neither $STAGE_URL nor $RELEASE_URL exists"
@@ -50,7 +48,7 @@ rm -rf "$FILES_DIR"
 svn export --quiet "$SOURCE_URL" "$FILES_DIR"
 check_files "$FILES_DIR" "$VERSION"
 TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+trap 'stop_gpg_agent; rm -rf "$TEMP_DIR"' EXIT
 use_keys_keyring "$TEMP_DIR"
 (
   cd "$FILES_DIR"
@@ -59,6 +57,8 @@ use_keys_keyring "$TEMP_DIR"
   done
   sha512 --check --status ./*.sha512 || die "a checksum doesn't match"
 )
+# What PyPI checks on upload, checked before anything is published.
+twine check --strict "${PYTHON_PACKAGES[@]}"
 
 confirm "Has the vote on dev@ for $RC_TAG passed, with at least three binding +1s?"
 
@@ -84,14 +84,20 @@ else
 fi
 
 info "Uploading the voted wheel and sdist to PyPI"
-twine check --strict "${PYTHON_PACKAGES[@]}"
 confirm "Upload $PYTHON_NAME $VERSION to PyPI?"
 publish twine upload --skip-existing "${PYTHON_PACKAGES[@]}"
 
 # dist/release keeps only the latest release of each maintained branch; the
-# archive keeps them all.
-for old in $(svn ls "$DIST_RELEASE" 2>/dev/null | tr -d /); do
-  [[ "$old" == "$VERSION" ]] && continue
+# archive keeps them all. Only older releases are offered for removal.
+OLD_RELEASES=()
+if svn_exists "$DIST_RELEASE"; then
+  for entry in $(svn ls "$DIST_RELEASE" | tr -d /); do
+    if [[ "$entry" =~ $VERSION_PATTERN ]] && version_lower "$entry" "$VERSION"; then
+      OLD_RELEASES+=("$entry")
+    fi
+  done
+fi
+for old in ${OLD_RELEASES[@]+"${OLD_RELEASES[@]}"}; do
   if ask "Remove $old from dist/release? Keep it if its branch is still maintained."; then
     publish svn delete --quiet "$DIST_RELEASE/$old" --message "Remove Apache Gravitino MCP Gateway $old"
   fi
