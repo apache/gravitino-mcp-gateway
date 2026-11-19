@@ -23,6 +23,6 @@ from pathlib import Path
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 try:
-    VERSION = version("gravitino-mcp-gateway")
+    VERSION = version("apache-gravitino-mcp-gateway")
 except PackageNotFoundError:  # run from a source tree that isn't installed
     VERSION = "unknown"

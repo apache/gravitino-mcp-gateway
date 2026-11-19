@@ -28,7 +28,7 @@ from pathlib import Path
 from packaging.markers import Marker, default_environment
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-ROOT_PACKAGE = "gravitino-mcp-gateway"
+ROOT_PACKAGE = "apache-gravitino-mcp-gateway"
 # The image is Linux, on the official CPython 3.11 image.
 IMAGE_ENVIRONMENT = {
     **default_environment(),
