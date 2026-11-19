@@ -20,8 +20,8 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gravitino-mcp-gateway"
-version = "2.0.0.dev0"
+name = "apache-gravitino-mcp-gateway"
+version = "0.1.0.dev0"
 description = "Apache Gravitino MCP Gateway: sign-in, access control and audit for MCP servers"
 readme = "README.md"
 license = "Apache-2.0"
@@ -64,8 +64,8 @@ slack = ["aiohttp>=3.14.3,<4", "slack-bolt>=1.21.3,<2"]
 
 [project.urls]
 Homepage = "https://gravitino.apache.org/"
-"Source Code" = "https://github.com/apache/gravitino"
-"Bug Tracker" = "https://github.com/apache/gravitino/issues"
+"Source Code" = "https://github.com/apache/gravitino-mcp-gateway"
+"Bug Tracker" = "https://github.com/apache/gravitino-mcp-gateway/issues"
 
 [project.scripts]
 gravitino-mcp = "mcp_gateway_cli.cli:cli"
