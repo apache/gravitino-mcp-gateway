@@ -207,6 +207,13 @@ uvx isort==9.0.0 --check-only mcp_gateway mcp_gateway_cli mcp_gateway_sdk tests
 uv run pylint mcp_gateway mcp_gateway_cli mcp_gateway_sdk tests
 ```
 
+Every file needs the Apache license header, except those `.licenserc.yaml` lists.
+Check them with:
+
+```bash
+docker run --rm -v "$(pwd)":/github/workspace apache/skywalking-eyes:0.9.0 header check
+```
+
 Build the Docker image with:
 
 ```bash

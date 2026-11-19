@@ -39,6 +39,21 @@ env:
   SOURCES: mcp_gateway mcp_gateway_cli mcp_gateway_sdk tests
 
 jobs:
+  license:
+    name: License headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check license headers
+        # Configured in .licenserc.yaml.
+        uses: apache/skywalking-eyes/header@v0.9.0
+        with:
+          # Report in the job log, not as pull request comments.
+          token: ""
+
   test:
     name: Unit tests and lint
     runs-on: ubuntu-latest
