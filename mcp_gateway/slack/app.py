@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 GATEWAY_URL = settings.GATEWAY_BASE_URL.rstrip("/")
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
-_session_factory: Optional[Callable[[], Session]] = None
+_session_factory: Optional[Callable[[], Session]] = None  # pylint: disable=invalid-name
 
 
 async def handle_gateway_command(ack, command, client, respond) -> None:  # type: ignore[no-untyped-def]

@@ -44,9 +44,9 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 # Module-level singletons (populated on first access)
-_private_key: Any = None
+_private_key: Any = None  # pylint: disable=invalid-name
 _public_jwk: Dict[str, Any] = {}
-_kid: str = ""
+_kid: str = ""  # pylint: disable=invalid-name
 
 
 def _base64url_encode(data: bytes) -> str:

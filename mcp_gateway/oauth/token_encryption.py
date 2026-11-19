@@ -108,7 +108,7 @@ class TokenEncryption:
 
 
 # Global encryption instance (initialized on first use)
-_token_encryption: Optional[TokenEncryption] = None
+_token_encryption: Optional[TokenEncryption] = None  # pylint: disable=invalid-name
 
 
 def _configured_key() -> Optional[str]:
