@@ -35,7 +35,7 @@ REVIEW = "/api/mcp-access/admin/review"
 PERMISSIONS = "/api/mcp-access/admin/permissions"
 
 # Captured before the autouse fixture below replaces the module attribute.
-_REAL_FIRE_AND_FORGET = mcp_access._fire_and_forget
+_real_fire_and_forget = mcp_access._fire_and_forget
 
 
 @pytest.fixture(autouse=True, name="_no_background_slack")
@@ -403,7 +403,7 @@ async def test_a_background_notification_is_held_until_it_finishes():
     async def _work():
         started.set()
 
-    _REAL_FIRE_AND_FORGET(_work())
+    _real_fire_and_forget(_work())
 
     assert len(mcp_access._background_tasks) == 1
     await started.wait()

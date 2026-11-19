@@ -85,7 +85,7 @@ else:
 # Create session factory
 # expire_on_commit=False keeps loaded attributes available after commit
 # so fire-and-forget background tasks can safely read scalar values.
-SessionLocal = sessionmaker(
+SessionLocal = sessionmaker(  # pylint: disable=invalid-name
     autocommit=False, autoflush=False, expire_on_commit=False, bind=engine
 )
 

@@ -129,7 +129,7 @@ def _validate_session(session_id: str, service: str, user_id: int) -> bool:
 
 # Shared httpx client for proxying requests to backend MCPs.
 # Created lazily on first use; reuses TCP connections across requests.
-_mcp_http_client: Optional[httpx.AsyncClient] = None
+_mcp_http_client: Optional[httpx.AsyncClient] = None  # pylint: disable=invalid-name
 
 
 def _get_mcp_http_client() -> httpx.AsyncClient:
