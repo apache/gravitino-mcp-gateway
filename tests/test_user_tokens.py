@@ -141,12 +141,16 @@ def fixture_lookup(regular_user):
 @pytest.fixture(autouse=True, name="send")
 def fixture_send():
     """Slack accepts the approval message; tests may change the answer."""
-    with patch(
-        "mcp_gateway.routes.user_tokens.send_token_approval_message",
-        new_callable=AsyncMock,
-        return_value=True,
-    ) as mock, patch(
-        "mcp_gateway.routes.user_tokens.get_slack_web_client", new_callable=AsyncMock
+    with (
+        patch(
+            "mcp_gateway.routes.user_tokens.send_token_approval_message",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock,
+        patch(
+            "mcp_gateway.routes.user_tokens.get_slack_web_client",
+            new_callable=AsyncMock,
+        ),
     ):
         yield mock
 

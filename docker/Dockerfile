@@ -16,15 +16,22 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+# Build from the repository root: docker build -f docker/Dockerfile .
 FROM python:3.11-slim
 
 LABEL maintainer="dev@gravitino.apache.org"
 
 WORKDIR /opt/mcp-gateway
 
-COPY --chmod=755 packages/mcp-gateway /opt/mcp-gateway
+COPY --chmod=755 pyproject.toml uv.lock .python-version README.md /opt/mcp-gateway/
+COPY --chmod=755 mcp_gateway /opt/mcp-gateway/mcp_gateway
+COPY --chmod=755 mcp_gateway_cli /opt/mcp-gateway/mcp_gateway_cli
+COPY --chmod=755 mcp_gateway_sdk /opt/mcp-gateway/mcp_gateway_sdk
+# The image bundles third-party packages, which LICENSE.bin and NOTICE.bin cover.
+COPY --chmod=755 LICENSE.bin /opt/mcp-gateway/LICENSE
+COPY --chmod=755 NOTICE.bin /opt/mcp-gateway/NOTICE
 
-COPY --chmod=755 start-mcp-gateway.sh /opt/mcp-gateway
+COPY --chmod=755 docker/start-mcp-gateway.sh /opt/mcp-gateway/
 
 # uv defaults its cache to $HOME/.cache/uv, which a non-root user cannot create.
 ENV UV_CACHE_DIR=/opt/mcp-gateway/.cache/uv

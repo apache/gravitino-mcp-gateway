@@ -157,8 +157,9 @@ async def test_metadata_that_isnt_the_servers_own_or_https_is_refused(
 ):
     monkeypatch.setattr(mod.settings, "DEBUG", False)
 
-    with patch.object(mod, "_fetch_json", return_value=document), pytest.raises(
-        ValueError, match=refusal
+    with (
+        patch.object(mod, "_fetch_json", return_value=document),
+        pytest.raises(ValueError, match=refusal),
     ):
         await mod.discover_oauth_metadata(mcp_url)
 

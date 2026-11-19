@@ -167,7 +167,7 @@ created at startup:
 
 ## Deployment
 
-`dev/docker/build-docker.sh --type mcp-gateway` builds the gateway's image. It
+`docker build -f docker/Dockerfile .` builds the gateway's image. It
 keeps its state in the database, except upstream MCP sessions and the refresh
 locks, which each process holds in memory. To run more than one replica, point
 them at the same MySQL database and give them the same `JWT_SECRET_KEY`,
