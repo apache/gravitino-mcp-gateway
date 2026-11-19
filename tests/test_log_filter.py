@@ -49,7 +49,7 @@ def _record(msg, *args, name="test"):
         ("GET https://blob.example.com/x?sig=sig-secret&se=1", "sig-secret"),
         # Whoever polls with a device code first gets the person's tokens.
         ("DeviceCodeData(device_code='dev-secret', user_code='AB-12')", "dev-secret"),
-        ("POST /api/device/token device_code=dev-secret&grant_type=x", "dev-secret"),
+        ("POST /api/v1/device/token device_code=dev-secret&grant_type=x", "dev-secret"),
         ('{"device_code": "dev-secret", "user_code": "AB-12"}', "dev-secret"),
     ],
 )

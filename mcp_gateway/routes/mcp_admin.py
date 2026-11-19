@@ -81,7 +81,7 @@ def _upstream_url(value: Optional[str]) -> Optional[str]:
     return value
 
 
-router = APIRouter(prefix="/api/admin/mcp", tags=["admin-mcp"])
+router = APIRouter(prefix="/api/v1/admin/mcp", tags=["admin-mcp"])
 
 
 def _sign_in_problem(  # pylint: disable=too-many-arguments

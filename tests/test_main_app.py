@@ -94,7 +94,7 @@ def test_a_non_401_mcp_error_carries_no_authentication_challenge(client):
 
 def test_the_rest_api_never_gets_a_json_rpc_envelope(client):
     """A real route: an unmatched path never reaches the handler at all."""
-    resp = client.get("/api/users/me")
+    resp = client.get("/api/v1/users/me")
 
     assert resp.status_code == 401
     assert resp.json() == {"detail": "Authorization header required"}
@@ -265,10 +265,10 @@ def test_no_origin_may_call_the_api_with_the_session_cookie(allowed, origin, exp
     """The API takes bearer tokens; otherwise any site could read it as the person."""
     probe = FastAPI()
     probe.add_middleware(CORSMiddleware, **cors_options(allowed))
-    probe.get("/api/users/me")(lambda: {})
+    probe.get("/api/v1/users/me")(lambda: {})
 
     resp = TestClient(probe).options(
-        "/api/users/me",
+        "/api/v1/users/me",
         headers={"Origin": origin, "Access-Control-Request-Method": "GET"},
     )
 

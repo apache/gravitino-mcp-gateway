@@ -103,7 +103,7 @@ def test_fetching_polls_until_the_person_approves(gateway, sleep):
 
     assert result == SlackUserToken(email="user@example.com", access_token="tok")
     assert post.call_count == 2
-    assert post.call_args.args[0] == f"{GATEWAY_URL}/api/sa/user-tokens"
+    assert post.call_args.args[0] == f"{GATEWAY_URL}/api/v1/sa/user-tokens"
     verify_user_tokens_body(post.call_args.kwargs["json"], SECRET)
     sleep.assert_called_once_with(0.01)
 
@@ -114,7 +114,8 @@ def test_fetching_uses_an_explicit_gateway(gateway):
     _fetch(env="https://other-gateway.example.com/")
 
     assert (
-        post.call_args.args[0] == "https://other-gateway.example.com/api/sa/user-tokens"
+        post.call_args.args[0]
+        == "https://other-gateway.example.com/api/v1/sa/user-tokens"
     )
 
 

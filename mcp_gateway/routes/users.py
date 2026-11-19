@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends
 from ..models import User
 from ..oauth_auth import get_user_from_bearer_token
 
-router = APIRouter(prefix="/api/users", tags=["Users"])
+router = APIRouter(prefix="/api/v1/users", tags=["Users"])
 
 
 @router.get("/me")

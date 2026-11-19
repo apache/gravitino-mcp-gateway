@@ -23,7 +23,7 @@ are allowed.  Human user JWTs are rejected with 403.
 
 Endpoint
 --------
-POST /api/sa/user-tokens
+POST /api/v1/sa/user-tokens
 
 Request body (JSON):
     {
@@ -87,7 +87,7 @@ def _require_enabled() -> None:
 
 
 router = APIRouter(
-    prefix="/api/sa",
+    prefix="/api/v1/sa",
     tags=["Service Account — User Tokens"],
     dependencies=[Depends(_require_enabled)],
 )
@@ -349,7 +349,7 @@ async def _get_slack_user_oauth_token(
         user=caller,
         service="mcp-gateway",
         tool_name="get_user_tokens",
-        method="POST /api/sa/user-tokens",
+        method="POST /api/v1/sa/user-tokens",
         request_params={"email": email_norm, "service": _SERVICE},
         request=request,
     ) as tracker:

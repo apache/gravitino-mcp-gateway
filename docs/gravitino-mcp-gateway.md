@@ -161,7 +161,7 @@ with Entra).
 
 With `GRAVITINO_MCP_URL` set, the gateway registers Gravitino's MCP server as `gravitino` at each
 start where no `gravitino` server exists. Later changes to these settings don't update it; change it
-with `PATCH /api/admin/mcp/gravitino` instead. To remove it for good, unset `GRAVITINO_MCP_URL`
+with `PATCH /api/v1/admin/mcp/gravitino` instead. To remove it for good, unset `GRAVITINO_MCP_URL`
 before you delete it, or deactivate it. Run the MCP server with `--transport http`, and with
 `--no-service-identity-fallback` if it also has a token or OAuth client credentials of its own, so
 that every call runs as the person making it, and with `--mcp-url http://0.0.0.0:8000/mcp` in a
@@ -197,7 +197,7 @@ in which case the gateway names the person by their email.
 
 ## Register MCP servers
 
-Admins register MCP servers with `POST /api/admin/mcp/`. A server's ID is part of the URL that MCP
+Admins register MCP servers with `POST /api/v1/admin/mcp/`. A server's ID is part of the URL that MCP
 clients use, `https://mcp-gateway.example.com/mcp/<server ID>`, and cannot change later. It has 3 to
 100 lowercase letters, digits, `.`, `_` and `-`, and starts with a letter or a digit.
 
@@ -232,7 +232,7 @@ New servers require approval unless `requires_approval` is false, and single sig
 unless `auto_sso_enabled` is true. For example, a server that takes exchanged tokens:
 
 ```shell
-curl -X POST https://mcp-gateway.example.com/api/admin/mcp/ \
+curl -X POST https://mcp-gateway.example.com/api/v1/admin/mcp/ \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d '{"service_id": "trino", "name": "Trino", "mcp_url": "https://trino-mcp.example.com/mcp",
        "auth_type": "oauth", "auto_sso_enabled": true, "audience": "trino"}'
@@ -247,8 +247,8 @@ accounts, which checks the gateway's tokens and is open to everyone:
  "auth_type": "passthrough", "service_auth_type": "passthrough", "requires_approval": false}
 ```
 
-`GET /api/admin/mcp/` lists the servers, and `GET /api/admin/mcp/<server ID>` shows one.
-`PATCH /api/admin/mcp/<server ID>` changes a server. Moving it, or changing how people sign in to
+`GET /api/v1/admin/mcp/` lists the servers, and `GET /api/v1/admin/mcp/<server ID>` shows one.
+`PATCH /api/v1/admin/mcp/<server ID>` changes a server. Moving it, or changing how people sign in to
 it, deletes the tokens people hold for it, and a client the gateway registered with its old sign-in;
 a stored client secret or basic-auth password must be given again with the move. `DELETE` deletes
 a server, with everyone's access to it and their tokens for it; to take a server out of use for a
@@ -281,27 +281,27 @@ MCP_TOOL_FILTERS={"gravitino": ["get_", "list_", "load_", "metadata_"], "trino":
 
 ## Review access requests
 
-`GET /api/mcp-access/admin/pending` lists the pending requests, 25 to a page unless `page_size`
+`GET /api/v1/mcp-access/admin/pending` lists the pending requests, 25 to a page unless `page_size`
 says otherwise, up to 100; `page` picks the page. An admin approves or denies one with
-`POST /api/mcp-access/admin/review/<request ID>`:
+`POST /api/v1/mcp-access/admin/review/<request ID>`:
 
 ```shell
-curl -X POST https://mcp-gateway.example.com/api/mcp-access/admin/review/42 \
+curl -X POST https://mcp-gateway.example.com/api/v1/mcp-access/admin/review/42 \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d '{"status": "approved", "expires_in_days": 30}'
 ```
 
 `expires_in_days`, from 1 to 3650, grants access for a while; without it, access doesn't expire.
 `admin_notes` explains a decision: a person who is denied sees it in
-`GET /api/mcp-access/my-requests`, and can ask again. When two admins review the same request, only
-the first decision counts. `GET /api/mcp-access/admin/permissions` lists who has access, paged the
-same way, and `DELETE /api/mcp-access/admin/permissions/<permission ID>` takes it away. On an open
+`GET /api/v1/mcp-access/my-requests`, and can ask again. When two admins review the same request, only
+the first decision counts. `GET /api/v1/mcp-access/admin/permissions` lists who has access, paged the
+same way, and `DELETE /api/v1/mcp-access/admin/permissions/<permission ID>` takes it away. On an open
 server, revoking does nothing lasting: anyone may use it, and the gateway grants access again at the
 next call.
 
 ## Read the audit log
 
-`GET /api/audit/logs` lists the calls of people and service accounts:
+`GET /api/v1/audit/logs` lists the calls of people and service accounts:
 
 - every request the gateway passes to a server, `tools/list` included, with the method as the tool
   name for anything but a tool call;
@@ -317,7 +317,7 @@ Each person sees their own calls; admins see everyone's, and can narrow the list
 its numeric `user_id`, as the log's entries give it. `service`, `tool_name` and `status` (`success`,
 `error`, `unauthorized` or `cancelled`) narrow it further, `start_date` and `end_date` bound the
 period, and `limit`, 100 by default and up to 1,000, and `offset` page through it.
-`GET /api/audit/logs/export/csv` exports what the caller sees as CSV, with the same filters, up to
+`GET /api/v1/audit/logs/export/csv` exports what the caller sees as CSV, with the same filters, up to
 the latest 10,000 calls. The log keeps each call's arguments, and with `AUDIT_LOG_RESPONSES` its
 response, so admins can read them. Arguments whose names look like secrets, such as `password`,
 `token` or `api_key`, are kept as `[redacted]`. Arguments or a response longer than 10,000
@@ -327,7 +327,7 @@ calls older than `AUDIT_RETENTION_DAYS`, 90 days by default.
 ## Service accounts
 
 Workloads on GKE, GCE or EKS call MCP servers through the gateway with their platform's identity
-token. An admin registers each one with `POST /api/admin/service-accounts`:
+token. An admin registers each one with `POST /api/v1/admin/service-accounts`:
 
 - `oauth_credentials.service_account_name`, its workload identity: the GCP service account's
   email, or for EKS `<namespace>::<service account>::<cluster ID>`, where the cluster ID is the
@@ -338,7 +338,7 @@ token. An admin registers each one with `POST /api/admin/service-accounts`:
   `<namespace>::<service account>` needs it.
 
 ```shell
-curl -X POST https://mcp-gateway.example.com/api/admin/service-accounts \
+curl -X POST https://mcp-gateway.example.com/api/v1/admin/service-accounts \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   -d '{"name": "svc-etl", "provider": "google", "allowed_services": ["tools"],
        "oauth_credentials": {"service_account_name": "etl@my-project.iam.gserviceaccount.com"}}'
@@ -396,8 +396,8 @@ bearer token, or with `"auth_header_type": "basic"` and a `username`, as basic a
 
 `gravitino-mcp services` lists the servers you can see. MCP clients reach each one at
 `<gateway>/mcp/<server ID>`. For a server that requires approval, ask with
-`POST /api/mcp-access/request`: its `mcp_id` is the server's numeric `id` in
-`GET /api/catalog/mcps`, and `justification` says why. `GET /api/mcp-access/my-requests` shows the
+`POST /api/v1/mcp-access/request`: its `mcp_id` is the server's numeric `id` in
+`GET /api/v1/catalog/mcps`, and `justification` says why. `GET /api/v1/mcp-access/my-requests` shows the
 request as pending until an admin decides. Open servers need no request.
 
 ### Clients that sign in themselves
@@ -462,7 +462,7 @@ with it, but not these connections, which you made yourself.
 
 | The client reports | Do this |
 | --- | --- |
-| `Access denied. You don't have permission to access <server>. Please request access.` | Request access with `POST /api/mcp-access/request`. |
+| `Access denied. You don't have permission to access <server>. Please request access.` | Request access with `POST /api/v1/mcp-access/request`. |
 | `Your permission to access <server> has expired.` | Request access again. |
 | `Not connected to <server>.` | For a server with its own sign-in, run `gravitino-mcp connect <server ID>`. For a server with single sign-on, the token exchange failed: an admin checks the gateway's log, and the identity provider's exchange permissions. |
 | `Tool '<tool>' is not available on <server>.` | The server's tool filter hides the tool. |
@@ -481,7 +481,7 @@ The gateway uses Slack only when these settings are set:
   `/gravitino-mcp login`, through the device flow, and out with `/gravitino-mcp logout`. The bot
   connects with Socket Mode, and installs with the `/gravitino-mcp` command.
 - `SLACK_USER_TOKENS_ENABLED=true`, with the bot's two tokens: a Slack app's service account may ask
-  for the gateway token of someone who signed in from Slack (`POST /api/sa/user-tokens`). The person
+  for the gateway token of someone who signed in from Slack (`POST /api/v1/sa/user-tokens`). The person
   approves each request in Slack, which names the service account that asks, and the approval lasts
   30 minutes. The person's approval is what protects them: the request's signature, made with the
   Slack app's own signing secret, proves no more than the service account's token does. The service

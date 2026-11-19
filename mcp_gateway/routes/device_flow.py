@@ -109,7 +109,7 @@ def _token_error(error: str, description: str) -> JSONResponse:
     )
 
 
-@router.post("/api/device/code", response_model=DeviceCodeResponse)
+@router.post("/api/v1/device/code", response_model=DeviceCodeResponse)
 async def request_device_code(
     body: DeviceCodeRequest, request: Request, db: Session = Depends(get_db)
 ):
@@ -217,7 +217,7 @@ async def decide_device_code(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/api/device/token")
+@router.post("/api/v1/device/token")
 async def poll_device_token(body: DeviceTokenRequest, db: Session = Depends(get_db)):
     """The person's gateway token, once they approve; one poll gets it."""
     if body.grant_type != DEVICE_GRANT_TYPE:

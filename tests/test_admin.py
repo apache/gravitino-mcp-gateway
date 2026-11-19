@@ -27,7 +27,7 @@ from mcp_gateway.models import (
     User,
 )
 
-API = "/api/admin/service-accounts"
+API = "/api/v1/admin/service-accounts"
 SHARED = "shared@proj.iam.gserviceaccount.com"
 
 

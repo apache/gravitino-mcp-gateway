@@ -176,7 +176,7 @@ and `autostart`; run `gravitino-mcp --help` for the full list.
 
 Workloads on GKE, GCE, or EKS call the gateway with their platform identity
 token, once an admin has registered the service account
-(`POST /api/admin/service-accounts`):
+(`POST /api/v1/admin/service-accounts`):
 
 ```python
 from mcp_gateway_sdk import get_gateway_sa_token

@@ -26,9 +26,9 @@ import pytest
 
 from mcp_gateway.models import AuditLog, User
 
-LOGS = "/api/audit/logs"
-CSV_EXPORT = "/api/audit/logs/export/csv"
-SUMMARY = "/api/audit/analytics/summary"
+LOGS = "/api/v1/audit/logs"
+CSV_EXPORT = "/api/v1/audit/logs/export/csv"
+SUMMARY = "/api/v1/audit/analytics/summary"
 
 
 def _user(db, username):

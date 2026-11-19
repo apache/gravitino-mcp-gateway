@@ -45,7 +45,9 @@ def test_a_device_code_is_requested_for_the_cli(post):
 
     assert (data.device_code, data.user_code) == ("dev-secret", "ABCD-1234")
     post.assert_called_once_with(
-        "http://gw/api/device/code", json={"client_id": "gravitino-mcp-cli"}, timeout=10
+        "http://gw/api/v1/device/code",
+        json={"client_id": "gravitino-mcp-cli"},
+        timeout=10,
     )
 
 
@@ -75,7 +77,7 @@ def test_one_poll_reports_the_gateways_answer(post, status_code, body, status, e
     assert (result.status, result.error) == (status, error)
     assert result.token_data == (body if status is PollStatus.SUCCESS else None)
     post.assert_called_once_with(
-        "http://gw/api/device/token",
+        "http://gw/api/v1/device/token",
         json={"device_code": "dev-secret", "grant_type": DEVICE_GRANT_TYPE},
         timeout=10,
     )

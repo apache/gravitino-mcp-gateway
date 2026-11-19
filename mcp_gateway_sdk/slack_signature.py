@@ -36,7 +36,7 @@ from .sa_token import _resolve_gateway_url
 logger = logging.getLogger(__name__)
 
 _SLACK_SIG_VERSION = "v0"
-_USER_TOKENS_PATH = "/api/sa/user-tokens"
+_USER_TOKENS_PATH = "/api/v1/sa/user-tokens"
 _DEFAULT_POLL_INTERVAL = 3.0
 _DEFAULT_POLL_TIMEOUT = 600.0
 _DEFAULT_REQUEST_TIMEOUT = 30.0
@@ -52,7 +52,7 @@ class SlackUserTokenTimeoutError(SlackUserTokenError):
 
 @dataclass(frozen=True)
 class SlackUserToken:
-    """OAuth token for a Slack user retrieved via ``POST /api/sa/user-tokens``."""
+    """OAuth token for a Slack user retrieved via ``POST /api/v1/sa/user-tokens``."""
 
     email: str
     access_token: str
@@ -136,7 +136,7 @@ def fetch_slack_user_token(  # pylint: disable=too-many-branches,too-many-locals
     request_timeout: float = _DEFAULT_REQUEST_TIMEOUT,
 ) -> SlackUserToken:
     """
-    Poll ``POST /api/sa/user-tokens`` until the user approves or *poll_timeout* elapses.
+    Poll ``POST /api/v1/sa/user-tokens`` until the user approves or *poll_timeout* elapses.
 
     *headers* must include ``Authorization``, plus the workload headers the
     gateway requires of service accounts (``SERVICE_ACCOUNT_REQUIRED_HEADERS``).

@@ -37,7 +37,7 @@ from mcp_gateway.sessions import SESSION_TYPE, session_cookie_name
 
 METADATA_URL = "https://auth.example.com/.well-known/oauth-authorization-server"
 AUDIENCE = "11111111-2222-3333-4444-666666666666"
-BASE = "/api/admin/mcp"
+BASE = "/api/v1/admin/mcp"
 SINGLE_SIGN_ON = {"auth_type": "oauth", "auto_sso_enabled": True, "audience": AUDIENCE}
 # A server with its own sign-in, whose client secret the gateway holds.
 OWN_SIGN_IN = {

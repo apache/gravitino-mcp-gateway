@@ -192,16 +192,16 @@ def test_the_status_page_opened_from_the_address_bar_is_served():
 
 def test_only_mcp_calls_reach_the_gateway(proxy, gateway):
     """Anything that can reach the proxy would otherwise use the user's admin API."""
-    assert proxy.get("/api/users/me").status_code == 404
-    assert proxy.post("/api/admin/mcp/", json={}).status_code == 404
+    assert proxy.get("/api/v1/users/me").status_code == 404
+    assert proxy.post("/api/v1/admin/mcp/", json={}).status_code == 404
     assert gateway[0] == []
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/mcp/../api/admin/mcp/",
-        "/mcp/%2e%2e/api/audit/logs",
+        "/mcp/../api/v1/admin/mcp/",
+        "/mcp/%2e%2e/api/v1/audit/logs",
         "/mcp/gravitino/..%2f..%2fapi%2fusers%2fme",
         "/mcp/gravitino/%2e%2e%2f%2e%2e%2fauth%2frefresh",
         "/mcp/%5c..%5capi",
