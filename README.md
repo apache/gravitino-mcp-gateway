@@ -55,8 +55,8 @@ design.
 - **Audit and metrics.** The calls the gateway passes on, the ones it refuses
   for want of access, and admins' changes
   are written to the audit log. Prometheus metrics are served at `/metrics`.
-- **Gravitino's web UI** manages the gateway: servers, access requests, service
-  accounts and the audit log.
+- **Admin API.** Admins manage servers, access requests, service accounts and
+  the audit log over the gateway's REST API.
 - **CLI** (`gravitino-mcp`). Signs in, configures installed AI clients, and runs
   a local proxy on port 8001 that adds the user's token to each MCP call.
 
@@ -144,7 +144,6 @@ export GATEWAY_API_SCOPES=gravitino
 export GRAVITINO_MCP_URL=http://localhost:8100/mcp
 export GRAVITINO_URI=http://localhost:8090         # alice, Gravitino's service admin, is an admin
 export USER_ID_CLAIM=preferred_username            # the first of Gravitino's principalFields
-export CORS_ALLOWED_ORIGINS=http://localhost:3000  # Gravitino's web UI, run with pnpm dev
 # TOKEN_ENCRYPTION_KEY and JWT_SECRET_KEY as above
 uvicorn mcp_gateway.main:app --port 8000
 ```
@@ -155,11 +154,6 @@ To have the gateway exchange tokens instead (RFC 8693), set
 `JWT_AUDIENCE=mcp-gateway`, `GATEWAY_API_SCOPES=mcp-gateway` and
 `GRAVITINO_MCP_AUDIENCE=gravitino`. [setup-realm.sh](dev/keycloak/setup-realm.sh)
 shows the Keycloak settings each needs.
-
-Gravitino signs in with Keycloak too, and points its web UI at the gateway. The
-UI in the Gravitino image predates the MCP pages; to see them, run the UI from
-this repository with `pnpm install && pnpm dev` in `web-v2/web`, then open
-http://localhost:3000 and sign in as alice.
 
 `MCP_GATEWAY_KEYCLOAK_TEST=1 uv run pytest -m integration tests/integration/test_keycloak.py`
 tests the gateway against this setup.
@@ -180,7 +174,8 @@ and `autostart`; run `gravitino-mcp --help` for the full list.
 ## Service accounts
 
 Workloads on GKE, GCE, or EKS call the gateway with their platform identity
-token, once an admin has registered the service account in Gravitino's web UI:
+token, once an admin has registered the service account
+(`POST /api/admin/service-accounts`):
 
 ```python
 from mcp_gateway_sdk import get_gateway_sa_token
