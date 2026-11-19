@@ -33,6 +33,10 @@ maintainers = [{ name = "Apache Gravitino Community", email = "dev@gravitino.apa
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
 # The gateway server, the CLI (whose local proxy runs on FastAPI) and the SDK.
 dependencies = [

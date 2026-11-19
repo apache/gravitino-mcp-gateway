@@ -20,14 +20,14 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "branch-*"]
 
 permissions:
   contents: read
 
 concurrency:
-  # A pull request keeps only its latest run. Each push to main has a group of
-  # its own, so that every push gets a result.
+  # A pull request keeps only its latest run. Each push to main or a release
+  # branch has a group of its own, so that every push gets a result.
   group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
@@ -36,6 +36,7 @@ env:
   UV_VERSION: "0.12.14"
   BLACK: "black==26.5.1"
   ISORT: "isort==9.0.0"
+  TWINE: "twine==7.0.0"
   SOURCES: mcp_gateway mcp_gateway_cli mcp_gateway_sdk tests
 
 jobs:
@@ -82,6 +83,57 @@ jobs:
           uv run pylint ${SOURCES}
       - name: Unit tests
         run: uv run pytest -m "not integration"
+
+  python:
+    # The job above tests the oldest Python the gateway supports.
+    name: Unit tests on Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14", "3.15"]
+    env:
+      # Overrides .python-version, which names the oldest.
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras
+      - name: Unit tests
+        run: uv run pytest -m "not integration"
+
+  package:
+    name: Python package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: python -m pip install "uv==${UV_VERSION}"
+      - name: Build the wheel and the sdist
+        run: uv build
+      - name: Check the metadata PyPI shows
+        run: uv tool run --from "${TWINE}" twine check --strict dist/*
+      - name: Install the wheel and run it
+        # Installs the dependencies pip would choose, not the locked ones.
+        run: |
+          uv venv /tmp/package
+          uv pip install --python /tmp/package dist/*.whl
+          /tmp/package/bin/gravitino-mcp --help
+          /tmp/package/bin/python tests/package_check.py
 
   integration:
     name: Integration tests
