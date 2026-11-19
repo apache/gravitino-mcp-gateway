@@ -91,6 +91,10 @@ include = [
 [tool.setuptools.package-data]
 mcp_gateway = ["templates/*.html"]
 
+[tool.black]
+# The oldest Python the project supports, as requires-python says.
+target-version = ["py311"]
+
 [tool.isort]
 profile = "black"
 
