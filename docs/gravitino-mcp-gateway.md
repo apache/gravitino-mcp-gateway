@@ -301,12 +301,17 @@ next call.
 
 ## Read the audit log
 
-`GET /api/audit/logs` lists the calls of people and service accounts: every request the gateway
-passes to a server, `tools/list` included, with the method as the tool name for anything but a
-tool call; every call to a server that it refuses for want of access, as `unauthorized`; every
-tool call whose client left before it finished, as `cancelled`, since it may still have run; and
-every change an admin makes to a server or a service account. Calls without a valid token, and
-calls to servers that don't exist for the caller, are not recorded.
+`GET /api/audit/logs` lists the calls of people and service accounts:
+
+- every request the gateway passes to a server, `tools/list` included, with the method as the tool
+  name for anything but a tool call;
+- every call to a server that it refuses for want of access, as `unauthorized`;
+- every tool call whose client left before it finished, as `cancelled`, since it may still have
+  run;
+- every change an admin makes to a server or a service account.
+
+Calls without a valid token, and calls to servers that don't exist for the caller, are not
+recorded.
 
 Each person sees their own calls; admins see everyone's, and can narrow the list to one account with
 its numeric `user_id`, as the log's entries give it. `service`, `tool_name` and `status` (`success`,
@@ -341,14 +346,14 @@ curl -X POST https://mcp-gateway.example.com/api/admin/service-accounts \
 
 The gateway trusts the issuers in `TRUSTED_ISSUERS`, comma-separated, such as
 `https://accounts.google.com` and the EKS cluster's OIDC issuer URL. It finds their signing keys
-by discovery, or in `TRUSTED_ISSUER_JWKS` (comma-separated `issuer=https://jwks-uri` pairs). A token's audience must be
-`JWT_AUDIENCE` or the gateway itself: `GATEWAY_BASE_URL`, or with `OIDC_PROVIDER=azure` also its
-client ID. A token that names the account by email must mark the email verified; EKS tokens name
-the Kubernetes service account instead.
+by discovery, or in `TRUSTED_ISSUER_JWKS` (comma-separated `issuer=https://jwks-uri` pairs). A
+token's audience must be `JWT_AUDIENCE` or the gateway itself: `GATEWAY_BASE_URL`, or with
+`OIDC_PROVIDER=azure` also its client ID. A token that names the account by email must mark the
+email verified; EKS tokens name the Kubernetes service account instead.
 
-A workload gets its token with the SDK in `mcp-gateway`, and sends it on each call. The token is
-for the gateway's URL, which must be https, or on `localhost`, unless `audience=` names
-`JWT_AUDIENCE` instead:
+A workload gets its token with the SDK, `mcp_gateway_sdk` in the `apache-gravitino-mcp-gateway`
+package, and sends it on each call. The token is for the gateway's URL, which must be https, or on
+`localhost`, unless `audience=` names `JWT_AUDIENCE` instead:
 
 ```python
 from mcp_gateway_sdk import get_gateway_sa_token
@@ -437,9 +442,10 @@ from, and approve it. It then points Claude Code, VS Code, Cursor and OpenCode a
 `http://localhost:8001/mcp/gravitino`, and starts the proxy, also at login on macOS and Linux.
 Other servers are at `http://localhost:8001/mcp/<server ID>`. `setup` replaces a `gravitino` entry
 in Claude Code's user settings, VS Code's user `mcp.json`, `~/.cursor/mcp.json` and
-`~/.config/opencode/opencode.json`, so a client that signs in itself needs another name there. `gravitino-mcp doctor` diagnoses problems, and
-`gravitino-mcp --help` lists the other commands. `setup` doesn't configure Claude Desktop, whose
-configuration file holds only servers that it starts itself.
+`~/.config/opencode/opencode.json`, so a client that signs in itself needs another name there.
+`gravitino-mcp doctor` diagnoses problems, and `gravitino-mcp --help` lists the other commands.
+`setup` doesn't configure Claude Desktop, whose configuration file holds only servers that it
+starts itself.
 
 The proxy forwards only MCP calls, and refuses requests from web pages. Any program you run can
 use it, and so can other users of the same machine, so on a shared machine use clients that sign
