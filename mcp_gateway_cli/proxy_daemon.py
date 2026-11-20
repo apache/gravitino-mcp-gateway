@@ -256,7 +256,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                         response.text,
                     )
                     return False
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
+            except httpx.TransportError as e:
                 logger.error("Could not reach the gateway to refresh the token: %s", e)
                 self.gateway_unreachable = True
                 return False

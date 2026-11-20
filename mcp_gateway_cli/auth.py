@@ -304,8 +304,14 @@ def refresh_access_token() -> bool:
     except Exception as e:  # pylint: disable=broad-exception-caught
         if is_unreachable(e):
             raise GatewayUnreachable(gateway_url) from e
-        if isinstance(e, requests.Timeout):
-            raise GatewayUnreachable(gateway_url, "timed out") from e
+        # Only the gateway refusing the refresh token ends the sign-in.
+        if isinstance(e, requests.RequestException) and not isinstance(
+            e, requests.exceptions.SSLError
+        ):
+            reason = (
+                "timed out" if isinstance(e, requests.Timeout) else "incomplete answer"
+            )
+            raise GatewayUnreachable(gateway_url, reason) from e
         print(f"Warning: Token refresh error: {e}")
         return False
 

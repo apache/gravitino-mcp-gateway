@@ -288,12 +288,14 @@ def _failing(how):
             return httpx.Response(401)
         if how == "timed out":
             raise httpx.ReadTimeout("Read timed out", request=request)
+        if how == "cut off":
+            raise httpx.RemoteProtocolError("Server disconnected", request=request)
         return httpx.Response(503)
 
     return httpx.MockTransport(handler)
 
 
-@pytest.mark.parametrize("how", ["unreachable", "timed out", "HTTP 503"])
+@pytest.mark.parametrize("how", ["unreachable", "timed out", "HTTP 503", "cut off"])
 @pytest.mark.parametrize("age", [270, 400], ids=["due", "expired"])
 def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
     tmp_path, monkeypatch, how, age

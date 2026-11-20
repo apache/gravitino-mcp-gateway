@@ -245,8 +245,12 @@ def test_a_token_is_refreshed_only_in_its_last_minute(
             SimpleNamespace(status_code=503, text=""),
             "isn't working right now (HTTP 503)",
         ),
+        (
+            requests.exceptions.ChunkedEncodingError("Connection broken"),
+            "isn't working right now (incomplete answer)",
+        ),
     ],
-    ids=["unreachable", "timed out", "HTTP 503"],
+    ids=["unreachable", "timed out", "HTTP 503", "cut off"],
 )
 def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
     tmp_path, monkeypatch, answer, message

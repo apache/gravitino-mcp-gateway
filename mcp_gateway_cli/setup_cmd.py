@@ -80,9 +80,9 @@ def run_setup(
 
     # 1. Authentication ----------------------------------------------------- #
     # A saved sign-in for another gateway isn't refreshed, since it may be down.
-    other_gateway = gateway_url and gateway_url != (
-        auth_module.load_tokens() or {}
-    ).get("gateway_url")
+    other_gateway = gateway_url and gateway_url.rstrip("/") != (
+        (auth_module.load_tokens() or {}).get("gateway_url") or ""
+    ).rstrip("/")
     try:
         needs_login = do_login and (other_gateway or not auth_module.get_access_token())
     except auth_module.GatewayUnreachable as exc:
