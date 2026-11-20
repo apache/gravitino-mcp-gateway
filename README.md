@@ -32,10 +32,9 @@ It is part of the [Apache Gravitino](https://gravitino.apache.org) project.
 > The gateway is in beta: its configuration and APIs may change in later
 > releases.
 
-The [user documentation](docs/gravitino-mcp-gateway.md) covers deploying the
-gateway with an identity provider, registering MCP servers, service accounts,
-and connecting MCP clients. [ARCHITECTURE.md](ARCHITECTURE.md) describes the
-design.
+The [user documentation][docs] covers deploying the gateway with an identity
+provider, registering MCP servers, service accounts, and connecting MCP
+clients. [ARCHITECTURE.md][architecture] describes the design.
 
 ## Features
 
@@ -60,6 +59,31 @@ design.
 - **CLI** (`gravitino-mcp`). Signs in, configures installed AI clients, and runs
   a local proxy on port 8001 that adds the user's token to each MCP call.
 
+## Install
+
+The gateway, the `gravitino-mcp` CLI and the SDK are one Python package, for
+Python 3.11 or later:
+
+```bash
+pip install apache-gravitino-mcp-gateway
+```
+
+The extras `gcp`, `aws` and `azure` add the cloud secret stores, and `slack`
+the Slack bot, for example `pip install "apache-gravitino-mcp-gateway[gcp]"`.
+
+The Docker image runs the gateway, with every extra:
+
+```bash
+docker pull apache/gravitino-mcp-gateway:latest
+```
+
+Its tags are the release versions, such as `0.1.0`, and `latest`, the newest
+release. The package and the image are built from the source releases on
+Apache Gravitino's [download page](https://gravitino.apache.org/downloads/).
+
+From a checkout of this repository, `uv sync && source .venv/bin/activate`
+installs the gateway instead.
+
 ## Layout
 
 | Path | Contents |
@@ -74,12 +98,9 @@ design.
 
 ## Run the gateway
 
-Python 3.11 or later is required. The commands use [uv](https://docs.astral.sh/uv/);
-`pip install -e .` works too.
+With the package installed:
 
 ```bash
-uv sync && source .venv/bin/activate
-
 # Key that encrypts stored OAuth tokens; keep it stable across restarts
 export TOKEN_ENCRYPTION_KEY=$(python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())")
 export JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
@@ -96,9 +117,8 @@ uvicorn mcp_gateway.main:app --port 8000
 Register `http://localhost:8000/auth/oauth/callback` as a redirect URI of the
 gateway's client at the identity provider, then open http://localhost:8000 and
 sign in. Settings can also go in a `.env` file, or the one `MCP_GATEWAY_ENV_FILE`
-names; [mcp_gateway/config.py](mcp_gateway/config.py) lists them all with their
-defaults, and the [user documentation](docs/gravitino-mcp-gateway.md#run-the-gateway)
-describes the main ones.
+names; [mcp_gateway/config.py][config] lists them all with their defaults, and
+the [user documentation][docs-run] describes the main ones.
 
 The gateway's session and sign-in cookies use the `__Host-` prefix, which
 browsers accept only over HTTPS and, in recent Chrome and Firefox, on
@@ -121,12 +141,11 @@ python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode(), e
   gcloud secrets create mcp-gateway-encryption-key --data-file=-
 ```
 
-The cloud backends need the `gcp`, `aws` or `azure` extra, for example
-`uv sync --extra gcp`.
+The cloud backends need the `gcp`, `aws` or `azure` extra.
 
 ## Try it with Keycloak
 
-[dev/keycloak](dev/keycloak) runs Keycloak, Gravitino and Gravitino's MCP server
+[dev/keycloak][keycloak] runs Keycloak, Gravitino and Gravitino's MCP server
 in Docker. Keycloak gets a `gravitino` realm with users `alice` and `bob`, whose
 passwords are their names. Alice is Gravitino's service admin and owns the
 metalake `demo`, which bob can't see. The passwords and the client secret are
@@ -153,8 +172,8 @@ with Keycloak, signs you in, and the gateway forwards your token to Gravitino.
 `offline_access` lets clients such as Claude Code get a refresh token.
 To have the gateway exchange tokens instead (RFC 8693), set
 `JWT_AUDIENCE=mcp-gateway`, `GATEWAY_API_SCOPES="mcp-gateway offline_access"` and
-`GRAVITINO_MCP_AUDIENCE=gravitino`. [setup-realm.sh](dev/keycloak/setup-realm.sh)
-shows the Keycloak settings each needs.
+`GRAVITINO_MCP_AUDIENCE=gravitino`. [setup-realm.sh][setup-realm] shows the
+Keycloak settings each needs.
 
 `MCP_GATEWAY_KEYCLOAK_TEST=1 uv run pytest -m integration tests/integration/test_keycloak.py`
 tests the gateway against this setup.
@@ -162,7 +181,7 @@ tests the gateway against this setup.
 ## Use the CLI
 
 ```bash
-pip install .   # from this repository; installs the gravitino-mcp command
+pip install apache-gravitino-mcp-gateway   # installs the gravitino-mcp command
 export MCP_GATEWAY_URL=https://mcp-gateway.example.com
 gravitino-mcp setup    # sign in, configure AI clients, start the local proxy
 gravitino-mcp doctor   # diagnose sign-in, gateway, and proxy problems
@@ -187,7 +206,7 @@ token = get_gateway_sa_token("https://mcp-gateway.example.com", source="aws")  #
 
 With no URL, the SDK reads `MCP_GATEWAY_URL`. The token is for the gateway's
 URL, unless `audience=` names the gateway's `JWT_AUDIENCE` instead. The
-[user documentation](docs/gravitino-mcp-gateway.md#service-accounts) covers
+[user documentation][docs-service-accounts] covers
 registering service accounts, the issuers the gateway trusts, workload headers,
 and forwarding secrets to MCP servers.
 
@@ -224,8 +243,19 @@ docker build -f docker/Dockerfile -t apache/gravitino-mcp-gateway .
 
 - Mailing list: [dev@gravitino.apache.org](https://lists.apache.org/list.html?dev@gravitino.apache.org)
 - Issues and pull requests: on this repository
-- Security issues: report them privately, as [SECURITY.md](SECURITY.md) describes
+- Security issues: report them privately, as [SECURITY.md][security] describes
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0][license].
+
+<!-- Full URLs, so that the links also work on PyPI. -->
+[docs]: https://github.com/apache/gravitino-mcp-gateway/blob/main/docs/gravitino-mcp-gateway.md
+[docs-run]: https://github.com/apache/gravitino-mcp-gateway/blob/main/docs/gravitino-mcp-gateway.md#run-the-gateway
+[docs-service-accounts]: https://github.com/apache/gravitino-mcp-gateway/blob/main/docs/gravitino-mcp-gateway.md#service-accounts
+[architecture]: https://github.com/apache/gravitino-mcp-gateway/blob/main/ARCHITECTURE.md
+[config]: https://github.com/apache/gravitino-mcp-gateway/blob/main/mcp_gateway/config.py
+[keycloak]: https://github.com/apache/gravitino-mcp-gateway/tree/main/dev/keycloak
+[setup-realm]: https://github.com/apache/gravitino-mcp-gateway/blob/main/dev/keycloak/setup-realm.sh
+[security]: https://github.com/apache/gravitino-mcp-gateway/blob/main/SECURITY.md
+[license]: https://github.com/apache/gravitino-mcp-gateway/blob/main/LICENSE

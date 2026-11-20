@@ -66,6 +66,7 @@ slack = ["aiohttp>=3.14.3,<4", "slack-bolt>=1.21.3,<2"]
 Homepage = "https://gravitino.apache.org/"
 "Source Code" = "https://github.com/apache/gravitino-mcp-gateway"
 "Bug Tracker" = "https://github.com/apache/gravitino-mcp-gateway/issues"
+Documentation = "https://github.com/apache/gravitino-mcp-gateway/blob/main/docs/gravitino-mcp-gateway.md"
 
 [project.scripts]
 gravitino-mcp = "mcp_gateway_cli.cli:cli"
