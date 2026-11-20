@@ -294,6 +294,17 @@ def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatc
     assert (tmp_path / "tokens").exists()
 
 
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
+    """A load balancer answers 502 or 503 while the gateway restarts."""
+    transport = httpx.MockTransport(lambda request: httpx.Response(503))
+    with _proxy_client(
+        tmp_path, transport, monkeypatch, lifetime=300, age=400
+    ) as client:
+        resp = client.post("/mcp/gravitino", json=_MESSAGE)
+
+    assert resp.text == "Could not reach the MCP gateway at https://gw.example.com"
+
+
 def test_a_logout_during_an_outage_asks_for_a_login(tmp_path, monkeypatch):
     def unreachable(request):
         raise httpx.ConnectError("Connection refused", request=request)

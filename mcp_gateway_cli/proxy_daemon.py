@@ -248,6 +248,8 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                         )
                         logger.info("Access token refreshed successfully")
                         return True
+                    # A load balancer answers 502 or 503 while the gateway restarts.
+                    self.gateway_unreachable = response.status_code >= 500
                     logger.error(
                         "Failed to refresh token: %s - %s",
                         response.status_code,

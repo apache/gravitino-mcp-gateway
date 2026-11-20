@@ -325,3 +325,29 @@ def test_a_certificate_problem_is_shown_as_such(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "certificate verify failed" in result.output
     assert "Cannot reach" not in result.output
+
+
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
+    """A load balancer answers 502 or 503 while the gateway restarts."""
+    monkeypatch.setattr(
+        auth.requests,
+        "post",
+        lambda *args, **kwargs: SimpleNamespace(status_code=503, text="unavailable"),
+    )
+
+    _signed_in(tmp_path, monkeypatch, 300, 270)
+    assert auth.get_access_token() == "access"
+
+    _signed_in(tmp_path, monkeypatch, 300, 400)
+    with pytest.raises(auth.GatewayUnreachable, match=r"\(HTTP 503\)"):
+        auth.get_access_token()
+
+
+def test_login_says_when_it_cant_reach_the_gateway(monkeypatch, capsys):
+    def unreachable(url):
+        raise requests.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(auth, "request_device_code", unreachable)
+
+    assert auth.device_flow_login("https://gw.example.com") is False
+    assert "Cannot reach https://gw.example.com." in capsys.readouterr().out

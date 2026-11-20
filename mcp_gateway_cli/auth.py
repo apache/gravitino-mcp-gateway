@@ -36,11 +36,14 @@ TOKEN_FILE = CONFIG_DIR / "tokens"
 
 
 class GatewayUnreachable(Exception):
-    """The gateway didn't answer, as when it is down or the network can't reach it."""
+    """The gateway didn't answer, or answered that it isn't working right now."""
 
-    def __init__(self, gateway_url: str):
+    def __init__(self, gateway_url: str, status_code: Optional[int] = None):
         super().__init__(
-            f"Cannot reach {gateway_url}. "
+            f"{gateway_url} isn't working right now (HTTP {status_code}). "
+            "Try again shortly."
+            if status_code
+            else f"Cannot reach {gateway_url}. "
             "Check the URL and that your network can reach it."
         )
 
@@ -139,7 +142,11 @@ def device_flow_login(gateway_url: str) -> bool:
     try:
         device_data = request_device_code(gateway_url)
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Failed to request device code: {e}")
+        print(
+            GatewayUnreachable(gateway_url)
+            if is_unreachable(e)
+            else f"Failed to request device code: {e}"
+        )
         return False
 
     verification_uri = device_data.verification_uri
@@ -285,11 +292,16 @@ def refresh_access_token() -> bool:
                 token_data.get("expires_in", 3600),
             )
             return True
+        # A load balancer answers 502 or 503 while the gateway restarts.
+        if response.status_code >= 500:
+            raise GatewayUnreachable(gateway_url, response.status_code)
         print(
             f"Warning: Token refresh failed: {response.status_code} - {response.text}"
         )
         return False
 
+    except GatewayUnreachable:
+        raise
     except Exception as e:  # pylint: disable=broad-exception-caught
         if is_unreachable(e):
             raise GatewayUnreachable(gateway_url) from e
