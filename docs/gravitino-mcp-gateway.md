@@ -59,14 +59,13 @@ person's own token, or one exchanged for Gravitino, so each call runs as that pe
 
 ## Run the gateway
 
-Build the image from this repository. To run the gateway without Docker, follow the
-[README](https://github.com/apache/gravitino-mcp-gateway/blob/main/README.md).
+Run the gateway's image from Docker Hub. To install it from PyPI and run it without Docker, follow
+the [README](https://github.com/apache/gravitino-mcp-gateway/blob/main/README.md).
 
 ```shell
-docker build -f docker/Dockerfile -t apache/gravitino-mcp-gateway .
 docker run -d -p 8000:8000 --env-file gateway.env \
   -v "$PWD/signing-key.pem:/etc/mcp-gateway/signing-key.pem:ro" \
-  apache/gravitino-mcp-gateway
+  apache/gravitino-mcp-gateway:latest
 ```
 
 The gateway reads its settings from environment variables, here from `gateway.env`:
@@ -132,6 +131,8 @@ encryption key, or with `UPSTREAM_TLS_VERIFY=false`, and it doesn't serve its AP
 Browsers on the allowed origins call the API with tokens, never with the gateway's cookies.
 Also:
 
+- Run a release of the image, such as `apache/gravitino-mcp-gateway:0.1.0`, rather than `latest`,
+  and the same release on every replica.
 - Keep `JWT_SECRET_KEY`, the encryption key and the signing key stable and secret, and give every
   replica the same ones and the same MySQL database. Generate an encryption key with
   `python -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"`, and a
@@ -428,11 +429,10 @@ no such registration; with Entra, use the CLI.
 ### The CLI
 
 The `gravitino-mcp` CLI signs you in through the browser and runs a local proxy, at
-`http://localhost:8001`, which adds your token to each call. Install it from a checkout of
-this repository:
+`http://localhost:8001`, which adds your token to each call. Install it from PyPI:
 
 ```shell
-pip install .
+pip install apache-gravitino-mcp-gateway
 export MCP_GATEWAY_URL=https://mcp-gateway.example.com
 gravitino-mcp setup
 ```
