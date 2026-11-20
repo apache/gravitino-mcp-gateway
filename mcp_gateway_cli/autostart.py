@@ -57,6 +57,14 @@ class AutostartResult:
     path: Optional[str] = None
 
 
+_NO_SYSTEMD = AutostartResult(
+    "Linux",
+    STATUS_UNSUPPORTED,
+    "systemd isn't available, so the proxy won't start at login. "
+    "Start it with: gravitino-mcp proxy start",
+)
+
+
 def proxy_program_arguments() -> List[str]:
     """argv that runs the proxy in the foreground under a supervisor.
 
@@ -128,6 +136,12 @@ def systemd_unit_path() -> Path:
 # --------------------------------------------------------------------------- #
 # Platform dispatch
 # --------------------------------------------------------------------------- #
+def systemd_available() -> bool:
+    """Whether systemd runs this Linux; containers and minimal installs may have
+    systemctl without it."""
+    return Path("/run/systemd/system").is_dir()
+
+
 def enable(
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     plist_path: Optional[Path] = None,
@@ -137,6 +151,8 @@ def enable(
     if system == "Darwin":
         return _enable_launchd(runner, plist_path or launchd_plist_path())
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         return _enable_systemd(runner, unit_path or systemd_unit_path())
     return AutostartResult(
         system, STATUS_UNSUPPORTED, "auto-start service not supported on this OS"
@@ -152,6 +168,8 @@ def disable(
     if system == "Darwin":
         return _disable_launchd(runner, plist_path or launchd_plist_path())
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         return _disable_systemd(runner, unit_path or systemd_unit_path())
     return AutostartResult(system, STATUS_UNSUPPORTED, "nothing to disable")
 
@@ -166,6 +184,8 @@ def status(
             system, STATUS_ENABLED if p.exists() else STATUS_DISABLED, path=str(p)
         )
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         u = unit_path or systemd_unit_path()
         return AutostartResult(
             system, STATUS_ENABLED if u.exists() else STATUS_DISABLED, path=str(u)
@@ -177,6 +197,9 @@ def status(
 # macOS launchd
 # --------------------------------------------------------------------------- #
 def _enable_launchd(runner, plist_path: Path) -> AutostartResult:
+    # A failure removes only a file this call created: one installed before
+    # still starts the proxy at login.
+    created = not plist_path.exists()
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         plist_path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,6 +220,8 @@ def _enable_launchd(runner, plist_path: Path) -> AutostartResult:
             check=False,
         )
         if result.returncode != 0:
+            if created:
+                plist_path.unlink(missing_ok=True)
             stderr = (getattr(result, "stderr", "") or "").strip()
             return AutostartResult(
                 "Darwin",
@@ -209,6 +234,8 @@ def _enable_launchd(runner, plist_path: Path) -> AutostartResult:
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
         # Surface any file system or launchctl failure.
+        if created:
+            plist_path.unlink(missing_ok=True)
         return AutostartResult("Darwin", STATUS_ERROR, str(exc), str(plist_path))
 
 
@@ -233,6 +260,8 @@ def _disable_launchd(runner, plist_path: Path) -> AutostartResult:
 # Linux systemd (user)
 # --------------------------------------------------------------------------- #
 def _enable_systemd(runner, unit_path: Path) -> AutostartResult:
+    # As for launchd, a failure removes only a file this call created.
+    created = not unit_path.exists()
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         unit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -252,6 +281,8 @@ def _enable_systemd(runner, unit_path: Path) -> AutostartResult:
             check=False,
         )
         if result.returncode != 0:
+            if created:
+                unit_path.unlink(missing_ok=True)
             stderr = (getattr(result, "stderr", "") or "").strip()
             return AutostartResult(
                 "Linux",
@@ -263,6 +294,8 @@ def _enable_systemd(runner, unit_path: Path) -> AutostartResult:
             "Linux", STATUS_ENABLED, "systemd user unit enabled", str(unit_path)
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
+        if created:
+            unit_path.unlink(missing_ok=True)
         return AutostartResult("Linux", STATUS_ERROR, str(exc), str(unit_path))
 
 

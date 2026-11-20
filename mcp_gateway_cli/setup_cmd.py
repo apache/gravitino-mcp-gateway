@@ -79,7 +79,16 @@ def run_setup(
     echo("=" * 60)
 
     # 1. Authentication ----------------------------------------------------- #
-    if do_login and not auth_module.get_access_token():
+    # A saved sign-in for another gateway isn't refreshed, since it may be down.
+    other_gateway = gateway_url and gateway_url.rstrip("/") != (
+        (auth_module.load_tokens() or {}).get("gateway_url") or ""
+    ).rstrip("/")
+    try:
+        needs_login = do_login and (other_gateway or not auth_module.get_access_token())
+    except auth_module.GatewayUnreachable as exc:
+        echo(str(exc))
+        return False
+    if needs_login:
         echo("\nLogging in...")
         target = gateway_url or auth_module.get_gateway_url()
         if not auth_module.device_flow_login(target):

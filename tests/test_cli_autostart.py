@@ -77,6 +77,7 @@ def test_enabling_installs_and_starts_the_service_and_disabling_removes_it(
     tmp_path, monkeypatch, system, path_arg, start
 ):
     monkeypatch.setattr(autostart.platform, "system", lambda: system)
+    monkeypatch.setattr(autostart, "systemd_available", lambda: True)
     runner, calls = _runner()
     service = {path_arg: tmp_path / "service"}
 
@@ -96,12 +97,19 @@ def test_enabling_reports_a_service_manager_that_fails_to_start_it(
     tmp_path, monkeypatch, system, path_arg, start
 ):
     monkeypatch.setattr(autostart.platform, "system", lambda: system)
+    monkeypatch.setattr(autostart, "systemd_available", lambda: True)
     runner, _ = _runner(failing=start)
 
     result = autostart.enable(runner=runner, **{path_arg: tmp_path / "service"})
 
     assert result.status == autostart.STATUS_ERROR
     assert "nope" in result.detail
+    # Left behind, a new file would make status report the service as enabled,
+    assert not (tmp_path / "service").exists()
+    # but one installed before is kept, so the proxy still starts at login.
+    (tmp_path / "service").write_text("installed")
+    autostart.enable(runner=runner, **{path_arg: tmp_path / "service"})
+    assert (tmp_path / "service").exists()
 
 
 def test_another_os_has_no_auto_start(monkeypatch):
@@ -109,3 +117,21 @@ def test_another_os_has_no_auto_start(monkeypatch):
 
     for action in (autostart.enable, autostart.disable, autostart.status):
         assert action().status == autostart.STATUS_UNSUPPORTED
+
+
+def test_linux_without_systemd_has_no_auto_start(tmp_path, monkeypatch):
+    """Containers and minimal installs have no systemd, so nothing is written."""
+    monkeypatch.setattr(autostart.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(autostart, "systemd_available", lambda: False)
+    runner, calls = _runner()
+    unit = tmp_path / "service"
+
+    result = autostart.enable(runner=runner, unit_path=unit)
+
+    assert result.status == autostart.STATUS_UNSUPPORTED
+    assert "systemd" in result.detail
+    assert not unit.exists()
+    assert autostart.status(unit_path=unit).status == autostart.STATUS_UNSUPPORTED
+    disabled = autostart.disable(runner=runner, unit_path=unit)
+    assert disabled.status == autostart.STATUS_UNSUPPORTED
+    assert not calls

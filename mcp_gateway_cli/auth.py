@@ -29,10 +29,30 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .constants import CONFIG_DIR, DEFAULT_GATEWAY_URL
+from .constants import CONFIG_DIR, DEFAULT_GATEWAY_URL, TOKEN_REFRESH_MARGIN_SECONDS
 from .device_flow import PollStatus, poll_device_token_until_done, request_device_code
 
 TOKEN_FILE = CONFIG_DIR / "tokens"
+
+
+class GatewayUnreachable(Exception):
+    """The gateway didn't answer, or answered that it isn't working right now."""
+
+    def __init__(self, gateway_url: str, reason: Optional[str] = None):
+        super().__init__(
+            f"{gateway_url} isn't working right now ({reason}). Try again shortly."
+            if reason
+            else f"Cannot reach {gateway_url}. "
+            "Check the URL and that your network can reach it."
+        )
+
+
+def is_unreachable(error: Exception) -> bool:
+    """Whether a request failed because nothing answered, rather than, say,
+    because of a certificate that isn't trusted."""
+    return isinstance(error, requests.ConnectionError) and not isinstance(
+        error, requests.exceptions.SSLError
+    )
 
 
 def save_tokens(
@@ -121,7 +141,11 @@ def device_flow_login(gateway_url: str) -> bool:
     try:
         device_data = request_device_code(gateway_url)
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Failed to request device code: {e}")
+        print(
+            GatewayUnreachable(gateway_url)
+            if is_unreachable(e)
+            else f"Failed to request device code: {e}"
+        )
         return False
 
     verification_uri = device_data.verification_uri
@@ -135,16 +159,19 @@ def device_flow_login(gateway_url: str) -> bool:
     print("\n" + "=" * 60)
     print("Please complete the following steps:")
     print("=" * 60)
-    print(f"\n1. Opening browser to: {verification_uri}")
+    print(f"\n1. Go to: {verification_uri}")
     print(f"2. Enter this code: {user_code}")
     print("\n" + "=" * 60)
 
-    # Open browser automatically
     try:
-        webbrowser.open(verification_uri)
-        print("Browser opened automatically")
+        opened = webbrowser.open(verification_uri)
     except Exception:  # pylint: disable=broad-exception-caught
-        print("Warning: Please open the URL manually in your browser")
+        opened = False
+    print(
+        "Browser opened automatically"
+        if opened
+        else "Open the URL above in a browser, on any device"
+    )
 
     print(f"\nWaiting for approval (expires in {expires_in} seconds)...")
 
@@ -196,29 +223,36 @@ def get_access_token() -> Optional[str]:
         )
         return None
 
-    # Check if token is still valid
     access_token = tokens.get("access_token")
     created_at = tokens.get("created_at")
+    if not created_at:
+        return access_token
     expires_in = tokens.get("expires_in", 3600)
+    expires_at = datetime.fromisoformat(created_at) + timedelta(seconds=expires_in)
+    if expires_at - datetime.utcnow() > timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS):
+        return access_token
+    return _refreshed(access_token, expires_at)
 
-    if created_at:
-        created_dt = datetime.fromisoformat(created_at)
 
-        expires_at = created_dt + timedelta(seconds=expires_in)
+def _refreshed(access_token: Optional[str], expires_at: datetime) -> Optional[str]:
+    """A refreshed access token, or None once the sign-in has ended.
 
-        # If token expires in < 5 minutes, refresh it
-        if expires_at < datetime.utcnow() + timedelta(minutes=5):
-            print("Token expiring soon, refreshing...")
-            if refresh_access_token():
-                tokens = load_tokens()
-                return tokens.get("access_token") if tokens else None
-            # Refresh failed — don't return the expired token
-            print(
-                "Warning: Token refresh failed. Please run 'gravitino-mcp login' to re-authenticate."
-            )
-            return None
-
-    return access_token
+    While the gateway can't be reached, a token that hasn't expired is kept,
+    since it works once the gateway answers; after that, GatewayUnreachable.
+    """
+    try:
+        refreshed = refresh_access_token()
+    except GatewayUnreachable:
+        if expires_at > datetime.utcnow():
+            return access_token
+        raise
+    if refreshed:
+        tokens = load_tokens()
+        return tokens.get("access_token") if tokens else None
+    print(
+        "Warning: Token refresh failed. Please run 'gravitino-mcp login' to re-authenticate."
+    )
+    return None
 
 
 def refresh_access_token() -> bool:
@@ -257,12 +291,27 @@ def refresh_access_token() -> bool:
                 token_data.get("expires_in", 3600),
             )
             return True
+        # A load balancer answers 502 or 503 while the gateway restarts.
+        if response.status_code >= 500:
+            raise GatewayUnreachable(gateway_url, f"HTTP {response.status_code}")
         print(
             f"Warning: Token refresh failed: {response.status_code} - {response.text}"
         )
         return False
 
+    except GatewayUnreachable:
+        raise
     except Exception as e:  # pylint: disable=broad-exception-caught
+        if is_unreachable(e):
+            raise GatewayUnreachable(gateway_url) from e
+        # Only the gateway refusing the refresh token ends the sign-in.
+        if isinstance(e, requests.RequestException) and not isinstance(
+            e, requests.exceptions.SSLError
+        ):
+            reason = (
+                "timed out" if isinstance(e, requests.Timeout) else "incomplete answer"
+            )
+            raise GatewayUnreachable(gateway_url, reason) from e
         print(f"Warning: Token refresh error: {e}")
         return False
 

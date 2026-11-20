@@ -21,6 +21,7 @@ Proxy management commands for MCP Gateway CLI
 
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -90,6 +91,12 @@ def _answers_as_this_users_proxy() -> bool:
     return bool(expected) and secrets.compare_digest(expected, answered)
 
 
+def _port_in_use(port: int) -> bool:
+    """Whether a program listens on ``port`` on this machine."""
+    with socket.socket() as sock:
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
 def start_proxy():
     """Start the auth proxy daemon"""
     # Check if already running
@@ -100,6 +107,13 @@ def start_proxy():
     # Check if tokens exist (user must login first)
     if not TOKEN_FILE.exists():
         print("Not authenticated. Please run 'gravitino-mcp login' first.")
+        return False
+
+    if _port_in_use(PROXY_PORT):
+        print(
+            f"Port {PROXY_PORT} is in use by another program, so the proxy can't "
+            "start. Stop that program, then run: gravitino-mcp proxy start"
+        )
         return False
 
     print(f"Starting Auth Proxy on port {PROXY_PORT}...")

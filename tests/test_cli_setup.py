@@ -69,6 +69,34 @@ def test_setup_stops_when_login_fails(monkeypatch):
     assert setup_cmd.run_setup(echo=lambda *_: None) is False
 
 
+def test_setup_says_when_it_cant_reach_the_gateway(monkeypatch):
+    def unreachable():
+        raise setup_cmd.auth_module.GatewayUnreachable("https://gw")
+
+    monkeypatch.setattr(setup_cmd.auth_module, "get_access_token", unreachable)
+    lines = []
+
+    assert setup_cmd.run_setup(echo=lines.append) is False
+    assert any(line.startswith("Cannot reach https://gw.") for line in lines)
+
+
+def test_setup_signs_in_to_the_gateway_it_was_given(monkeypatch):
+    """Without first refreshing the saved sign-in for another gateway, which may be down."""
+
+    def refreshed():
+        raise AssertionError("refreshed the sign-in for another gateway")
+
+    monkeypatch.setattr(
+        setup_cmd.auth_module, "load_tokens", lambda: {"gateway_url": "https://old"}
+    )
+    monkeypatch.setattr(setup_cmd.auth_module, "get_access_token", refreshed)
+    logins = []
+    monkeypatch.setattr(setup_cmd.auth_module, "device_flow_login", logins.append)
+
+    assert setup_cmd.run_setup(gateway_url="https://new", echo=lambda *_: None) is False
+    assert logins == ["https://new"]
+
+
 def test_the_proxy_exits_cleanly_when_no_one_is_signed_in(monkeypatch, tmp_path):
     """A clean exit (0), not a crash, so the supervisor doesn't restart it in a loop."""
     monkeypatch.setattr(proxy, "TOKEN_FILE", tmp_path / "tokens")

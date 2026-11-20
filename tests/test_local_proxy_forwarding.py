@@ -28,8 +28,9 @@ send neither Origin nor Sec-Fetch-Site.
 import gzip
 import json
 import os
+import socket
 import stat
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
@@ -45,19 +46,27 @@ _MESSAGE = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 _REPLY = {"jsonrpc": "2.0", "id": 1, "result": {}}
 
 
-def _token_file(path, gateway_url="https://gw.example.com"):
+def _token_file(path, gateway_url="https://gw.example.com", lifetime=3600, age=0):
+    """A sign-in whose token lasts ``lifetime`` seconds and was issued ``age`` seconds ago."""
+    issued = datetime.utcnow() - timedelta(seconds=age)
     path.write_text(
         json.dumps(
             {
                 "access_token": "token-1",
                 "refresh_token": "refresh-1",
                 "gateway_url": gateway_url,
-                "expires_in": 3600,
-                "created_at": datetime.utcnow().isoformat(),
+                "expires_in": lifetime,
+                "created_at": issued.isoformat(),
             }
         )
     )
     return path
+
+
+def _proxy_client(tmp_path, transport, monkeypatch, **token):
+    _through(monkeypatch, transport)
+    app = AuthProxy(TokenManager(_token_file(tmp_path / "tokens", **token)))
+    return TestClient(app.app, base_url="http://127.0.0.1:8001")
 
 
 @pytest.fixture(name="gateway")
@@ -108,6 +117,8 @@ def fixture_proxy(tmp_path, gateway, monkeypatch):
 
 class _NoTokens:
     """A token manager with no token, so an accepted request ends in a 503."""
+
+    gateway_unreachable = False
 
     def get_gateway_url(self):
         return "http://gateway.example.com"
@@ -255,6 +266,85 @@ def test_a_refused_token_is_refreshed_even_before_it_expires(proxy, gateway):
     paths = [r.url.path for r in gateway[0]]
     assert paths == ["/mcp/gravitino", "/auth/refresh", "/mcp/gravitino"]
     assert gateway[0][-1].headers["authorization"] == "Bearer token-2"
+
+
+def test_a_short_lived_token_is_not_refreshed_on_every_request(
+    tmp_path, gateway, monkeypatch
+):
+    """Keycloak's tokens last 5 minutes; a fresh one is used as it is."""
+    with _proxy_client(tmp_path, gateway[2], monkeypatch, lifetime=300) as client:
+        client.post("/mcp/gravitino", json=_MESSAGE)
+
+    assert [r.url.path for r in gateway[0]] == ["/mcp/gravitino"]
+
+
+def _failing(how):
+    """A gateway whose refresh fails ``how``, and that refuses tokens otherwise."""
+
+    def handler(request):
+        if how == "unreachable":
+            raise httpx.ConnectError("Connection refused", request=request)
+        if request.url.path != "/auth/refresh":
+            return httpx.Response(401)
+        if how == "timed out":
+            raise httpx.ReadTimeout("Read timed out", request=request)
+        if how == "cut off":
+            raise httpx.RemoteProtocolError("Server disconnected", request=request)
+        return httpx.Response(503)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.parametrize("how", ["unreachable", "timed out", "HTTP 503", "cut off"])
+@pytest.mark.parametrize("age", [270, 400], ids=["due", "expired"])
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
+    tmp_path, monkeypatch, how, age
+):
+    """Not with a 401, which makes MCP clients ask to sign in, even when a token
+    the gateway refused can't be refreshed."""
+    with _proxy_client(
+        tmp_path, _failing(how), monkeypatch, lifetime=300, age=age
+    ) as client:
+        resp = client.post("/mcp/gravitino", json=_MESSAGE)
+
+    assert resp.status_code == 503
+    assert resp.text == "Could not reach the MCP gateway at https://gw.example.com"
+    assert (tmp_path / "tokens").exists()
+
+
+def test_a_logout_during_an_outage_asks_for_a_login(tmp_path, monkeypatch):
+    def unreachable(request):
+        raise httpx.ConnectError("Connection refused", request=request)
+
+    with _proxy_client(
+        tmp_path, httpx.MockTransport(unreachable), monkeypatch, lifetime=300, age=400
+    ) as client:
+        assert "Could not reach" in client.post("/mcp/gravitino", json=_MESSAGE).text
+        (tmp_path / "tokens").unlink()
+
+        resp = client.post("/mcp/gravitino", json=_MESSAGE)
+
+    assert resp.text == "No valid token available. Please run: gravitino-mcp login"
+
+
+def test_the_proxy_says_when_another_program_has_its_port(
+    tmp_path, monkeypatch, capsys
+):
+    def started(*args, **kwargs):
+        raise AssertionError("a proxy was started")
+
+    monkeypatch.setattr(proxy_cli, "is_proxy_running", lambda: False)
+    monkeypatch.setattr(proxy_cli, "TOKEN_FILE", _token_file(tmp_path / "tokens"))
+    monkeypatch.setattr(proxy_cli.subprocess, "Popen", started)
+    with socket.socket() as other:
+        other.bind(("127.0.0.1", 0))
+        other.listen()
+        port = other.getsockname()[1]
+        monkeypatch.setattr(proxy_cli, "PROXY_PORT", port)
+
+        assert proxy_cli.start_proxy() is False
+
+    assert f"Port {port} is in use by another program" in capsys.readouterr().out
 
 
 def test_a_dropped_connection_is_not_retried(tmp_path, monkeypatch):

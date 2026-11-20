@@ -18,11 +18,16 @@
 """Unit tests for mcp_gateway_cli.clients (multi-client config writers)."""
 
 import json
+from datetime import datetime, timedelta
 from subprocess import CompletedProcess
+from types import SimpleNamespace
 
 import pytest
+import requests
+from click.testing import CliRunner
 
 from mcp_gateway_cli import auth, clients
+from mcp_gateway_cli.cli import cli as gravitino_mcp
 
 URL = "http://localhost:8001/mcp/trino"
 SERVERS = {"trino": URL}
@@ -196,3 +201,139 @@ def test_the_saved_token_goes_only_to_the_gateway_it_came_from(
         monkeypatch.delenv("MCP_GATEWAY_URL", raising=False)
 
     assert auth.get_access_token() == token
+
+
+def _signed_in(tmp_path, monkeypatch, lifetime, age):
+    """A saved sign-in whose token lasts ``lifetime`` seconds and was issued ``age`` seconds ago."""
+    token_file = tmp_path / "tokens"
+    monkeypatch.setattr(auth, "TOKEN_FILE", token_file)
+    monkeypatch.delenv("MCP_GATEWAY_URL", raising=False)
+    auth.save_tokens("access", "refresh", "https://gw.example.com", lifetime)
+    issued = datetime.utcnow() - timedelta(seconds=age)
+    saved = json.loads(token_file.read_text())
+    token_file.write_text(json.dumps({**saved, "created_at": issued.isoformat()}))
+
+
+@pytest.mark.parametrize(
+    "lifetime, age, refreshed",
+    [
+        # Keycloak's tokens last 5 minutes, so a fresh one isn't refreshed yet.
+        (300, 10, False),
+        (300, 250, True),
+        (3600, 3500, False),
+        (3600, 3560, True),
+    ],
+)
+def test_a_token_is_refreshed_only_in_its_last_minute(
+    tmp_path, monkeypatch, lifetime, age, refreshed
+):
+    _signed_in(tmp_path, monkeypatch, lifetime, age)
+    refreshes = []
+    monkeypatch.setattr(auth, "refresh_access_token", lambda: refreshes.append(1))
+
+    auth.get_access_token()
+
+    assert bool(refreshes) is refreshed
+
+
+@pytest.mark.parametrize(
+    "answer, message",
+    [
+        (requests.ConnectionError("Connection refused"), "Cannot reach https://gw."),
+        (requests.ReadTimeout("Read timed out"), "isn't working right now (timed out)"),
+        (
+            SimpleNamespace(status_code=503, text=""),
+            "isn't working right now (HTTP 503)",
+        ),
+        (
+            requests.exceptions.ChunkedEncodingError("Connection broken"),
+            "isn't working right now (incomplete answer)",
+        ),
+    ],
+    ids=["unreachable", "timed out", "HTTP 503", "cut off"],
+)
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
+    tmp_path, monkeypatch, answer, message
+):
+    def refresh(*args, **kwargs):
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(auth.requests, "post", refresh)
+
+    # Due for a refresh, but still good: it's used.
+    _signed_in(tmp_path, monkeypatch, 300, 270)
+    assert auth.get_access_token() == "access"
+
+    # Expired: what went wrong is named, and the sign-in is kept.
+    _signed_in(tmp_path, monkeypatch, 300, 400)
+    with pytest.raises(auth.GatewayUnreachable) as raised:
+        auth.get_access_token()
+    assert message in str(raised.value)
+    assert (tmp_path / "tokens").exists()
+
+
+@pytest.mark.parametrize(
+    "age, error, message",
+    [
+        # The refresh before the call can't reach the gateway, or the call itself can't.
+        (
+            400,
+            requests.ConnectionError("refused"),
+            "Cannot reach https://gw.example.com.",
+        ),
+        (
+            10,
+            requests.ConnectionError("refused"),
+            "Cannot reach https://gw.example.com.",
+        ),
+        # Not taken for an unreachable gateway, which would hide the reason.
+        (10, requests.exceptions.SSLError("certificate verify failed"), "certificate"),
+    ],
+    ids=["refresh", "call", "certificate"],
+)
+def test_the_cli_says_what_went_wrong(tmp_path, monkeypatch, age, error, message):
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(requests, "post", fail)
+    _signed_in(tmp_path, monkeypatch, 300, age)
+
+    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
+
+    assert result.exit_code == 1
+    assert message in result.output
+    assert "login" not in result.output
+
+
+@pytest.mark.parametrize("opened", [True, False])
+def test_login_says_that_the_browser_opened_only_when_it_did(
+    tmp_path, monkeypatch, capsys, opened
+):
+    monkeypatch.setattr(auth, "TOKEN_FILE", tmp_path / "tokens")
+    monkeypatch.setattr(
+        auth,
+        "request_device_code",
+        lambda url: SimpleNamespace(
+            device_code="device",
+            user_code="ABCD-EFGH",
+            verification_uri="https://gw.example.com/device",
+            expires_in=600,
+            interval=5,
+        ),
+    )
+    monkeypatch.setattr(
+        auth,
+        "poll_device_token_until_done",
+        lambda *args, **kwargs: SimpleNamespace(
+            status=auth.PollStatus.EXPIRED, token_data=None
+        ),
+    )
+    monkeypatch.setattr(auth.webbrowser, "open", lambda url: opened)
+
+    auth.device_flow_login("https://gw.example.com")
+
+    output = capsys.readouterr().out
+    assert ("Browser opened automatically" in output) is opened
+    assert ("Open the URL above in a browser" in output) is not opened

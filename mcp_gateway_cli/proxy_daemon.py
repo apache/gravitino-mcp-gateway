@@ -43,7 +43,12 @@ from fastapi.responses import StreamingResponse
 from mcp_gateway.log_filter import install_sensitive_data_filter
 
 from .auth import TOKEN_FILE, write_private_file
-from .constants import DEFAULT_GATEWAY_URL, PROXY_ID_FILE, PROXY_REQUEST_TIMEOUT
+from .constants import (
+    DEFAULT_GATEWAY_URL,
+    PROXY_ID_FILE,
+    PROXY_REQUEST_TIMEOUT,
+    TOKEN_REFRESH_MARGIN_SECONDS,
+)
 from .proxy_identity import proof
 
 # Setup logging
@@ -109,6 +114,8 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         self._refresh_token: Optional[str] = None
         self._expires_at: Optional[datetime] = None
         self._gateway_url = DEFAULT_GATEWAY_URL
+        # Whether the last refresh found the gateway unreachable.
+        self.gateway_unreachable = False
         self._refresh_lock = asyncio.Lock()
         self._token_file_mtime: Optional[float] = None
         self._refresh_task: Optional[asyncio.Task] = None
@@ -192,14 +199,18 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
             logger.error("Error saving tokens: %s", e)
 
     def is_token_valid(self) -> bool:
-        """Check if current token is valid"""
+        """Whether the token is good and not yet due for a refresh."""
         if not self._access_token:
             return False
         if not self._expires_at:
             return True  # Assume valid if no expiry
-        # Consider token invalid if it expires in < 5 minutes
         now = datetime.now(timezone.utc).replace(tzinfo=None)  # Convert to naive UTC
-        return self._expires_at > now + timedelta(minutes=5)
+        return self._expires_at > now + timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS)
+
+    def _has_expired(self) -> bool:
+        """Whether the token's lifetime is over."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        return self._expires_at is not None and self._expires_at <= now
 
     def get_gateway_url(self) -> str:
         """Get the gateway URL"""
@@ -212,6 +223,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         it hasn't expired, as when the identity provider revoked it.
         """
         async with self._refresh_lock:
+            self.gateway_unreachable = False
             # Another request may have refreshed it while this one waited.
             if self.is_token_valid() and self._access_token != rejected:
                 return True
@@ -236,12 +248,18 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                         )
                         logger.info("Access token refreshed successfully")
                         return True
+                    # A load balancer answers 502 or 503 while the gateway restarts.
+                    self.gateway_unreachable = response.status_code >= 500
                     logger.error(
                         "Failed to refresh token: %s - %s",
                         response.status_code,
                         response.text,
                     )
                     return False
+            except httpx.TransportError as e:
+                logger.error("Could not reach the gateway to refresh the token: %s", e)
+                self.gateway_unreachable = True
+                return False
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.error("Error refreshing token: %s", e)
                 return False
@@ -256,6 +274,9 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
 
         logger.info("Token expired or expiring soon, refreshing...")
         if await self.refresh_access_token():
+            return self._access_token
+        # A token that hasn't expired still works once the gateway answers.
+        if self.gateway_unreachable and not self._has_expired():
             return self._access_token
 
         logger.error("Failed to get valid token")
@@ -284,8 +305,10 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                 if self._expires_at:
                     now = datetime.now(timezone.utc).replace(tzinfo=None)
                     time_until_expiry = (self._expires_at - now).total_seconds()
-                    # Refresh 5 minutes before expiry
-                    sleep_seconds = max(time_until_expiry - 300, 30)
+                    # Refresh in the token's last minute
+                    sleep_seconds = max(
+                        time_until_expiry - TOKEN_REFRESH_MARGIN_SECONDS, 30
+                    )
                 else:
                     # No expiry info — check again in 5 minutes
                     sleep_seconds = 300
@@ -306,6 +329,17 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
 
 # Maximum number of retries for transient connection errors
 PROXY_MAX_RETRIES = 2
+
+
+def _unreachable(gateway_url: str) -> Response:
+    """The answer when the gateway can't be reached, in plain text so that MCP
+    clients don't take it for a request to sign in."""
+    logger.error("Failed to connect to the gateway at %s", gateway_url)
+    return Response(
+        content=f"Could not reach the MCP gateway at {gateway_url}",
+        status_code=503,
+        media_type="text/plain",
+    )
 
 
 class AuthProxy:
@@ -510,20 +544,26 @@ class AuthProxy:
             return await self.oauth_not_supported()
         return await self._forward(request, mcp_path)
 
+    def _no_token(self) -> Response:
+        """The answer when there's no token to send: the gateway didn't answer,
+        or the sign-in has ended."""
+        if self.token_manager.gateway_unreachable:
+            return _unreachable(self.token_manager.get_gateway_url())
+        # Return 503 (not 401!) — a 401 tells MCP clients "needs OAuth"
+        # and triggers persistent "needs authentication" badges.
+        return Response(
+            content="No valid token available. Please run: gravitino-mcp login",
+            status_code=503,
+            media_type="text/plain",
+        )
+
     async def _forward(self, request: Request, mcp_path: str):
         """Forward the call to ``/mcp/<mcp_path>`` on the gateway of the latest login."""
         try:
             # Get valid token
             token = await self.token_manager.get_valid_token()
             if not token:
-                # Return 503 (not 401!) — a 401 tells MCP clients "needs OAuth"
-                # and triggers persistent "needs authentication" badges.
-                # 503 correctly signals "proxy can't reach backend right now".
-                return Response(
-                    content="No valid token available. Please run: gravitino-mcp login",
-                    status_code=503,
-                    media_type="text/plain",
-                )
+                return self._no_token()
 
             headers = {
                 k: v
@@ -559,6 +599,9 @@ class AuthProxy:
                             token = await self.token_manager.get_valid_token()
                             headers["Authorization"] = f"Bearer {token}"
                             continue
+                        # A 401 would make the MCP client ask to sign in.
+                        if self.token_manager.gateway_unreachable:
+                            resp = _unreachable(self.token_manager.get_gateway_url())
                     return resp
                 # Retried only when nothing reached the gateway: a tool call
                 # may not be safe to run twice.
@@ -577,14 +620,7 @@ class AuthProxy:
                     raise
 
         except httpx.ConnectError:
-            gateway_url = self.token_manager.get_gateway_url()
-            logger.error("Failed to connect to the gateway at %s", gateway_url)
-            # Use text/plain to avoid OAuth-shaped JSON triggering "needs auth" in MCP clients
-            return Response(
-                content=f"Could not reach the MCP gateway at {gateway_url}",
-                status_code=503,
-                media_type="text/plain",
-            )
+            return _unreachable(self.token_manager.get_gateway_url())
         except httpx.TimeoutException as e:
             logger.error("Proxy timeout: %s: %s", type(e).__name__, e)
             return Response(
