@@ -104,6 +104,8 @@ def test_enabling_reports_a_service_manager_that_fails_to_start_it(
 
     assert result.status == autostart.STATUS_ERROR
     assert "nope" in result.detail
+    # Left behind, the file would make status report the service as enabled.
+    assert not (tmp_path / "service").exists()
 
 
 def test_another_os_has_no_auto_start(monkeypatch):

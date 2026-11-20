@@ -278,31 +278,36 @@ def test_a_short_lived_token_is_not_refreshed_on_every_request(
     assert [r.url.path for r in gateway[0]] == ["/mcp/gravitino"]
 
 
-@pytest.mark.parametrize("age", [270, 400], ids=["due, not yet expired", "expired"])
-def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatch, age):
-    def unreachable(request):
-        raise httpx.ConnectError("Connection refused", request=request)
+def _failing(how):
+    """A gateway whose refresh fails ``how``, and that refuses tokens otherwise."""
 
-    transport = httpx.MockTransport(unreachable)
+    def handler(request):
+        if how == "unreachable":
+            raise httpx.ConnectError("Connection refused", request=request)
+        if request.url.path != "/auth/refresh":
+            return httpx.Response(401)
+        if how == "timed out":
+            raise httpx.ReadTimeout("Read timed out", request=request)
+        return httpx.Response(503)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.parametrize("how", ["unreachable", "timed out", "HTTP 503"])
+@pytest.mark.parametrize("age", [270, 400], ids=["due", "expired"])
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
+    tmp_path, monkeypatch, how, age
+):
+    """Not with a 401, which makes MCP clients ask to sign in, even when a token
+    the gateway refused can't be refreshed."""
     with _proxy_client(
-        tmp_path, transport, monkeypatch, lifetime=300, age=age
+        tmp_path, _failing(how), monkeypatch, lifetime=300, age=age
     ) as client:
         resp = client.post("/mcp/gravitino", json=_MESSAGE)
 
     assert resp.status_code == 503
     assert resp.text == "Could not reach the MCP gateway at https://gw.example.com"
     assert (tmp_path / "tokens").exists()
-
-
-def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
-    """A load balancer answers 502 or 503 while the gateway restarts."""
-    transport = httpx.MockTransport(lambda request: httpx.Response(503))
-    with _proxy_client(
-        tmp_path, transport, monkeypatch, lifetime=300, age=400
-    ) as client:
-        resp = client.post("/mcp/gravitino", json=_MESSAGE)
-
-    assert resp.text == "Could not reach the MCP gateway at https://gw.example.com"
 
 
 def test_a_logout_during_an_outage_asks_for_a_login(tmp_path, monkeypatch):

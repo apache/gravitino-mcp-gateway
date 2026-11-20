@@ -256,7 +256,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                         response.text,
                     )
                     return False
-            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
                 logger.error("Could not reach the gateway to refresh the token: %s", e)
                 self.gateway_unreachable = True
                 return False
@@ -599,6 +599,9 @@ class AuthProxy:
                             token = await self.token_manager.get_valid_token()
                             headers["Authorization"] = f"Bearer {token}"
                             continue
+                        # A 401 would make the MCP client ask to sign in.
+                        if self.token_manager.gateway_unreachable:
+                            resp = _unreachable(self.token_manager.get_gateway_url())
                     return resp
                 # Retried only when nothing reached the gateway: a tool call
                 # may not be safe to run twice.

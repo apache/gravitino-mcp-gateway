@@ -38,11 +38,10 @@ TOKEN_FILE = CONFIG_DIR / "tokens"
 class GatewayUnreachable(Exception):
     """The gateway didn't answer, or answered that it isn't working right now."""
 
-    def __init__(self, gateway_url: str, status_code: Optional[int] = None):
+    def __init__(self, gateway_url: str, reason: Optional[str] = None):
         super().__init__(
-            f"{gateway_url} isn't working right now (HTTP {status_code}). "
-            "Try again shortly."
-            if status_code
+            f"{gateway_url} isn't working right now ({reason}). Try again shortly."
+            if reason
             else f"Cannot reach {gateway_url}. "
             "Check the URL and that your network can reach it."
         )
@@ -294,7 +293,7 @@ def refresh_access_token() -> bool:
             return True
         # A load balancer answers 502 or 503 while the gateway restarts.
         if response.status_code >= 500:
-            raise GatewayUnreachable(gateway_url, response.status_code)
+            raise GatewayUnreachable(gateway_url, f"HTTP {response.status_code}")
         print(
             f"Warning: Token refresh failed: {response.status_code} - {response.text}"
         )
@@ -305,6 +304,8 @@ def refresh_access_token() -> bool:
     except Exception as e:  # pylint: disable=broad-exception-caught
         if is_unreachable(e):
             raise GatewayUnreachable(gateway_url) from e
+        if isinstance(e, requests.Timeout):
+            raise GatewayUnreachable(gateway_url, "timed out") from e
         print(f"Warning: Token refresh error: {e}")
         return False
 

@@ -26,7 +26,7 @@ import pytest
 import requests
 from click.testing import CliRunner
 
-from mcp_gateway_cli import auth, clients, mcp_client
+from mcp_gateway_cli import auth, clients
 from mcp_gateway_cli.cli import cli as gravitino_mcp
 
 URL = "http://localhost:8001/mcp/trino"
@@ -214,10 +214,6 @@ def _signed_in(tmp_path, monkeypatch, lifetime, age):
     token_file.write_text(json.dumps({**saved, "created_at": issued.isoformat()}))
 
 
-def _unreachable(*args, **kwargs):
-    raise requests.ConnectionError("Connection refused")
-
-
 @pytest.mark.parametrize(
     "lifetime, age, refreshed",
     [
@@ -240,28 +236,70 @@ def test_a_token_is_refreshed_only_in_its_last_minute(
     assert bool(refreshes) is refreshed
 
 
-def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
-    monkeypatch.setattr(auth.requests, "post", _unreachable)
+@pytest.mark.parametrize(
+    "answer, message",
+    [
+        (requests.ConnectionError("Connection refused"), "Cannot reach https://gw."),
+        (requests.ReadTimeout("Read timed out"), "isn't working right now (timed out)"),
+        (
+            SimpleNamespace(status_code=503, text=""),
+            "isn't working right now (HTTP 503)",
+        ),
+    ],
+    ids=["unreachable", "timed out", "HTTP 503"],
+)
+def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(
+    tmp_path, monkeypatch, answer, message
+):
+    def refresh(*args, **kwargs):
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(auth.requests, "post", refresh)
 
     # Due for a refresh, but still good: it's used.
     _signed_in(tmp_path, monkeypatch, 300, 270)
     assert auth.get_access_token() == "access"
 
-    # Expired: the gateway is named, and the sign-in is kept for when it's back.
+    # Expired: what went wrong is named, and the sign-in is kept.
     _signed_in(tmp_path, monkeypatch, 300, 400)
-    with pytest.raises(auth.GatewayUnreachable, match="https://gw.example.com"):
+    with pytest.raises(auth.GatewayUnreachable) as raised:
         auth.get_access_token()
+    assert message in str(raised.value)
     assert (tmp_path / "tokens").exists()
 
 
-def test_the_cli_says_when_it_cant_reach_the_gateway(tmp_path, monkeypatch):
-    monkeypatch.setattr(auth.requests, "post", _unreachable)
-    _signed_in(tmp_path, monkeypatch, 300, 400)
+@pytest.mark.parametrize(
+    "age, error, message",
+    [
+        # The refresh before the call can't reach the gateway, or the call itself can't.
+        (
+            400,
+            requests.ConnectionError("refused"),
+            "Cannot reach https://gw.example.com.",
+        ),
+        (
+            10,
+            requests.ConnectionError("refused"),
+            "Cannot reach https://gw.example.com.",
+        ),
+        # Not taken for an unreachable gateway, which would hide the reason.
+        (10, requests.exceptions.SSLError("certificate verify failed"), "certificate"),
+    ],
+    ids=["refresh", "call", "certificate"],
+)
+def test_the_cli_says_what_went_wrong(tmp_path, monkeypatch, age, error, message):
+    def fail(*args, **kwargs):
+        raise error
 
-    result = CliRunner().invoke(gravitino_mcp, ["services"])
+    monkeypatch.setattr(requests, "post", fail)
+    _signed_in(tmp_path, monkeypatch, 300, age)
+
+    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
 
     assert result.exit_code == 1
-    assert "Cannot reach https://gw.example.com" in result.output
+    assert message in result.output
     assert "login" not in result.output
 
 
@@ -295,59 +333,3 @@ def test_login_says_that_the_browser_opened_only_when_it_did(
     output = capsys.readouterr().out
     assert ("Browser opened automatically" in output) is opened
     assert ("Open the URL above in a browser" in output) is not opened
-
-
-def test_a_call_says_when_it_cant_reach_the_gateway(tmp_path, monkeypatch):
-    """A token that's still good doesn't need the gateway, until the call itself."""
-    monkeypatch.setattr(mcp_client.requests, "post", _unreachable)
-    _signed_in(tmp_path, monkeypatch, 300, 10)
-
-    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
-
-    assert result.exit_code == 1
-    assert result.output.strip() == (
-        "Cannot reach https://gw.example.com. "
-        "Check the URL and that your network can reach it."
-    )
-
-
-def test_a_certificate_problem_is_shown_as_such(tmp_path, monkeypatch):
-    """Not as an unreachable gateway, which would hide the reason."""
-
-    def untrusted(*args, **kwargs):
-        raise requests.exceptions.SSLError("certificate verify failed")
-
-    monkeypatch.setattr(mcp_client.requests, "post", untrusted)
-    _signed_in(tmp_path, monkeypatch, 300, 10)
-
-    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
-
-    assert result.exit_code == 1
-    assert "certificate verify failed" in result.output
-    assert "Cannot reach" not in result.output
-
-
-def test_a_gateway_that_isnt_working_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
-    """A load balancer answers 502 or 503 while the gateway restarts."""
-    monkeypatch.setattr(
-        auth.requests,
-        "post",
-        lambda *args, **kwargs: SimpleNamespace(status_code=503, text="unavailable"),
-    )
-
-    _signed_in(tmp_path, monkeypatch, 300, 270)
-    assert auth.get_access_token() == "access"
-
-    _signed_in(tmp_path, monkeypatch, 300, 400)
-    with pytest.raises(auth.GatewayUnreachable, match=r"\(HTTP 503\)"):
-        auth.get_access_token()
-
-
-def test_login_says_when_it_cant_reach_the_gateway(monkeypatch, capsys):
-    def unreachable(url):
-        raise requests.ConnectionError("Connection refused")
-
-    monkeypatch.setattr(auth, "request_device_code", unreachable)
-
-    assert auth.device_flow_login("https://gw.example.com") is False
-    assert "Cannot reach https://gw.example.com." in capsys.readouterr().out

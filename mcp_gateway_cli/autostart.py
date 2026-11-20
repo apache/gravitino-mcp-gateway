@@ -217,6 +217,8 @@ def _enable_launchd(runner, plist_path: Path) -> AutostartResult:
             check=False,
         )
         if result.returncode != 0:
+            # Left behind, the file would make status report the service as enabled.
+            plist_path.unlink(missing_ok=True)
             stderr = (getattr(result, "stderr", "") or "").strip()
             return AutostartResult(
                 "Darwin",
@@ -229,6 +231,7 @@ def _enable_launchd(runner, plist_path: Path) -> AutostartResult:
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
         # Surface any file system or launchctl failure.
+        plist_path.unlink(missing_ok=True)
         return AutostartResult("Darwin", STATUS_ERROR, str(exc), str(plist_path))
 
 
@@ -272,6 +275,8 @@ def _enable_systemd(runner, unit_path: Path) -> AutostartResult:
             check=False,
         )
         if result.returncode != 0:
+            # Left behind, the file would make status report the service as enabled.
+            unit_path.unlink(missing_ok=True)
             stderr = (getattr(result, "stderr", "") or "").strip()
             return AutostartResult(
                 "Linux",
@@ -283,6 +288,7 @@ def _enable_systemd(runner, unit_path: Path) -> AutostartResult:
             "Linux", STATUS_ENABLED, "systemd user unit enabled", str(unit_path)
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
+        unit_path.unlink(missing_ok=True)
         return AutostartResult("Linux", STATUS_ERROR, str(exc), str(unit_path))
 
 
