@@ -309,3 +309,19 @@ def test_a_call_says_when_it_cant_reach_the_gateway(tmp_path, monkeypatch):
         "Cannot reach https://gw.example.com. "
         "Check the URL and that your network can reach it."
     )
+
+
+def test_a_certificate_problem_is_shown_as_such(tmp_path, monkeypatch):
+    """Not as an unreachable gateway, which would hide the reason."""
+
+    def untrusted(*args, **kwargs):
+        raise requests.exceptions.SSLError("certificate verify failed")
+
+    monkeypatch.setattr(mcp_client.requests, "post", untrusted)
+    _signed_in(tmp_path, monkeypatch, 300, 10)
+
+    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
+
+    assert result.exit_code == 1
+    assert "certificate verify failed" in result.output
+    assert "Cannot reach" not in result.output

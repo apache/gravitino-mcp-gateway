@@ -45,6 +45,14 @@ class GatewayUnreachable(Exception):
         )
 
 
+def is_unreachable(error: Exception) -> bool:
+    """Whether a request failed because nothing answered, rather than, say,
+    because of a certificate that isn't trusted."""
+    return isinstance(error, requests.ConnectionError) and not isinstance(
+        error, requests.exceptions.SSLError
+    )
+
+
 def save_tokens(
     access_token: str,
     refresh_token: str,
@@ -145,7 +153,7 @@ def device_flow_login(gateway_url: str) -> bool:
     print("\n" + "=" * 60)
     print("Please complete the following steps:")
     print("=" * 60)
-    print(f"\n1. Opening browser to: {verification_uri}")
+    print(f"\n1. Go to: {verification_uri}")
     print(f"2. Enter this code: {user_code}")
     print("\n" + "=" * 60)
 
@@ -282,9 +290,9 @@ def refresh_access_token() -> bool:
         )
         return False
 
-    except (requests.ConnectionError, requests.Timeout) as e:
-        raise GatewayUnreachable(gateway_url) from e
     except Exception as e:  # pylint: disable=broad-exception-caught
+        if is_unreachable(e):
+            raise GatewayUnreachable(gateway_url) from e
         print(f"Warning: Token refresh error: {e}")
         return False
 

@@ -69,6 +69,17 @@ def test_setup_stops_when_login_fails(monkeypatch):
     assert setup_cmd.run_setup(echo=lambda *_: None) is False
 
 
+def test_setup_says_when_it_cant_reach_the_gateway(monkeypatch):
+    def unreachable():
+        raise setup_cmd.auth_module.GatewayUnreachable("https://gw")
+
+    monkeypatch.setattr(setup_cmd.auth_module, "get_access_token", unreachable)
+    lines = []
+
+    assert setup_cmd.run_setup(echo=lines.append) is False
+    assert any(line.startswith("Cannot reach https://gw.") for line in lines)
+
+
 def test_the_proxy_exits_cleanly_when_no_one_is_signed_in(monkeypatch, tmp_path):
     """A clean exit (0), not a crash, so the supervisor doesn't restart it in a loop."""
     monkeypatch.setattr(proxy, "TOKEN_FILE", tmp_path / "tokens")

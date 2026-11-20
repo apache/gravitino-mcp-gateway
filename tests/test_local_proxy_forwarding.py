@@ -294,6 +294,21 @@ def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatc
     assert (tmp_path / "tokens").exists()
 
 
+def test_a_logout_during_an_outage_asks_for_a_login(tmp_path, monkeypatch):
+    def unreachable(request):
+        raise httpx.ConnectError("Connection refused", request=request)
+
+    with _proxy_client(
+        tmp_path, httpx.MockTransport(unreachable), monkeypatch, lifetime=300, age=400
+    ) as client:
+        assert "Could not reach" in client.post("/mcp/gravitino", json=_MESSAGE).text
+        (tmp_path / "tokens").unlink()
+
+        resp = client.post("/mcp/gravitino", json=_MESSAGE)
+
+    assert resp.text == "No valid token available. Please run: gravitino-mcp login"
+
+
 def test_the_proxy_says_when_another_program_has_its_port(
     tmp_path, monkeypatch, capsys
 ):

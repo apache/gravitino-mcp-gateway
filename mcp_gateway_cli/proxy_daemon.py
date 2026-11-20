@@ -208,6 +208,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         return self._expires_at > now + timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS)
 
     def _has_expired(self) -> bool:
+        """Whether the token's lifetime is over."""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         return self._expires_at is not None and self._expires_at <= now
 
@@ -222,6 +223,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         it hasn't expired, as when the identity provider revoked it.
         """
         async with self._refresh_lock:
+            self.gateway_unreachable = False
             # Another request may have refreshed it while this one waited.
             if self.is_token_valid() and self._access_token != rejected:
                 return True
@@ -230,7 +232,6 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                 logger.error("No refresh token available")
                 return False
 
-            self.gateway_unreachable = False
             try:
                 async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
                     response = await client.post(
@@ -253,7 +254,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                         response.text,
                     )
                     return False
-            except httpx.TransportError as e:
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
                 logger.error("Could not reach the gateway to refresh the token: %s", e)
                 self.gateway_unreachable = True
                 return False

@@ -32,7 +32,6 @@ from __future__ import annotations
 import platform
 import plistlib
 import shlex
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -138,8 +137,9 @@ def systemd_unit_path() -> Path:
 # Platform dispatch
 # --------------------------------------------------------------------------- #
 def systemd_available() -> bool:
-    """Whether this Linux runs systemd, which containers and minimal installs don't."""
-    return shutil.which("systemctl") is not None
+    """Whether systemd runs this Linux; containers and minimal installs may have
+    systemctl without it."""
+    return Path("/run/systemd/system").is_dir()
 
 
 def enable(

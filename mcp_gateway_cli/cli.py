@@ -61,7 +61,7 @@ def get_access_token() -> Optional[str]:
 
 def _request_failed(what: str, error: requests.exceptions.RequestException) -> None:
     """Report a failed request, naming the gateway when it didn't answer at all."""
-    if isinstance(error, requests.ConnectionError):
+    if auth_module.is_unreachable(error):
         click.echo(str(auth_module.GatewayUnreachable(get_gateway_url())), err=True)
     else:
         click.echo(f"{what}: {error}", err=True)

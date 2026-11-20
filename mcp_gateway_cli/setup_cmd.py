@@ -79,7 +79,12 @@ def run_setup(
     echo("=" * 60)
 
     # 1. Authentication ----------------------------------------------------- #
-    if do_login and not auth_module.get_access_token():
+    try:
+        needs_login = do_login and not auth_module.get_access_token()
+    except auth_module.GatewayUnreachable as exc:
+        echo(str(exc))
+        return False
+    if needs_login:
         echo("\nLogging in...")
         target = gateway_url or auth_module.get_gateway_url()
         if not auth_module.device_flow_login(target):
