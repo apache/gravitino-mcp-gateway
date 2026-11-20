@@ -278,7 +278,7 @@ def test_a_short_lived_token_is_not_refreshed_on_every_request(
     assert [r.url.path for r in gateway[0]] == ["/mcp/gravitino"]
 
 
-@pytest.mark.parametrize("age", [200, 400], ids=["not yet expired", "expired"])
+@pytest.mark.parametrize("age", [270, 400], ids=["due, not yet expired", "expired"])
 def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatch, age):
     def unreachable(request):
         raise httpx.ConnectError("Connection refused", request=request)

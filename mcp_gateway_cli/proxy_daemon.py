@@ -42,8 +42,13 @@ from fastapi.responses import StreamingResponse
 
 from mcp_gateway.log_filter import install_sensitive_data_filter
 
-from .auth import TOKEN_FILE, refresh_margin, write_private_file
-from .constants import DEFAULT_GATEWAY_URL, PROXY_ID_FILE, PROXY_REQUEST_TIMEOUT
+from .auth import TOKEN_FILE, write_private_file
+from .constants import (
+    DEFAULT_GATEWAY_URL,
+    PROXY_ID_FILE,
+    PROXY_REQUEST_TIMEOUT,
+    TOKEN_REFRESH_MARGIN_SECONDS,
+)
 from .proxy_identity import proof
 
 # Setup logging
@@ -108,7 +113,6 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         self._access_token: Optional[str] = None
         self._refresh_token: Optional[str] = None
         self._expires_at: Optional[datetime] = None
-        self._lifetime = 3600
         self._gateway_url = DEFAULT_GATEWAY_URL
         # Whether the last refresh found the gateway unreachable.
         self.gateway_unreachable = False
@@ -134,7 +138,6 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                 self._refresh_token = data.get("refresh_token")
                 self._gateway_url = data.get("gateway_url", DEFAULT_GATEWAY_URL)
                 expires_in = data.get("expires_in", 3600)
-                self._lifetime = expires_in
                 created_at = data.get("created_at")
 
                 if created_at:
@@ -188,7 +191,6 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
 
             self._access_token = access_token
             self._refresh_token = refresh_token
-            self._lifetime = expires_in
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             self._expires_at = now + timedelta(seconds=expires_in)
 
@@ -203,7 +205,7 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
         if not self._expires_at:
             return True  # Assume valid if no expiry
         now = datetime.now(timezone.utc).replace(tzinfo=None)  # Convert to naive UTC
-        return self._expires_at > now + refresh_margin(self._lifetime)
+        return self._expires_at > now + timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS)
 
     def _has_expired(self) -> bool:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -300,8 +302,10 @@ class TokenManager:  # pylint: disable=too-many-instance-attributes
                 if self._expires_at:
                     now = datetime.now(timezone.utc).replace(tzinfo=None)
                     time_until_expiry = (self._expires_at - now).total_seconds()
-                    margin = refresh_margin(self._lifetime).total_seconds()
-                    sleep_seconds = max(time_until_expiry - margin, 30)
+                    # Refresh in the token's last minute
+                    sleep_seconds = max(
+                        time_until_expiry - TOKEN_REFRESH_MARGIN_SECONDS, 30
+                    )
                 else:
                     # No expiry info — check again in 5 minutes
                     sleep_seconds = 300

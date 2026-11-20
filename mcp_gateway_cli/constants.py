@@ -34,6 +34,10 @@ PROXY_ID_FILE = CONFIG_DIR / "proxy.id"
 PROXY_PORT = 8001
 PROXY_REQUEST_TIMEOUT = 1260
 
+# A token is refreshed in its last minute: time enough for a request to reach the
+# gateway, and shorter than any common token lifetime, such as Keycloak's 5 minutes.
+TOKEN_REFRESH_MARGIN_SECONDS = 60
+
 PROXY_BASE_URL = f"http://localhost:{PROXY_PORT}"
 
 # Logical MCP server name -> canonical proxy endpoint.

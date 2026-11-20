@@ -223,12 +223,12 @@ def _unreachable(*args, **kwargs):
     [
         # Keycloak's tokens last 5 minutes, so a fresh one isn't refreshed yet.
         (300, 10, False),
-        (300, 200, True),
-        (3600, 3000, False),
-        (3600, 3400, True),
+        (300, 250, True),
+        (3600, 3500, False),
+        (3600, 3560, True),
     ],
 )
-def test_a_token_is_refreshed_only_in_the_last_part_of_its_life(
+def test_a_token_is_refreshed_only_in_its_last_minute(
     tmp_path, monkeypatch, lifetime, age, refreshed
 ):
     _signed_in(tmp_path, monkeypatch, lifetime, age)
@@ -244,7 +244,7 @@ def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatc
     monkeypatch.setattr(auth.requests, "post", _unreachable)
 
     # Due for a refresh, but still good: it's used.
-    _signed_in(tmp_path, monkeypatch, 300, 200)
+    _signed_in(tmp_path, monkeypatch, 300, 270)
     assert auth.get_access_token() == "access"
 
     # Expired: the gateway is named, and the sign-in is kept for when it's back.

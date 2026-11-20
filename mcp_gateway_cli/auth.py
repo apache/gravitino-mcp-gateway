@@ -29,14 +29,10 @@ from urllib.parse import urlsplit
 
 import requests
 
-from .constants import CONFIG_DIR, DEFAULT_GATEWAY_URL
+from .constants import CONFIG_DIR, DEFAULT_GATEWAY_URL, TOKEN_REFRESH_MARGIN_SECONDS
 from .device_flow import PollStatus, poll_device_token_until_done, request_device_code
 
 TOKEN_FILE = CONFIG_DIR / "tokens"
-
-# A token is refreshed in the last part of its life: its last 5 minutes, or the
-# last half of a shorter one, such as Keycloak's default of 5 minutes.
-_REFRESH_MARGIN = timedelta(minutes=5)
 
 
 class GatewayUnreachable(Exception):
@@ -47,11 +43,6 @@ class GatewayUnreachable(Exception):
             f"Cannot reach {gateway_url}. "
             "Check the URL and that your network can reach it."
         )
-
-
-def refresh_margin(lifetime_seconds: float) -> timedelta:
-    """How long before it expires a token with this lifetime is refreshed."""
-    return min(_REFRESH_MARGIN, timedelta(seconds=lifetime_seconds) / 2)
 
 
 def save_tokens(
@@ -224,7 +215,7 @@ def get_access_token() -> Optional[str]:
         return access_token
     expires_in = tokens.get("expires_in", 3600)
     expires_at = datetime.fromisoformat(created_at) + timedelta(seconds=expires_in)
-    if expires_at - datetime.utcnow() > refresh_margin(expires_in):
+    if expires_at - datetime.utcnow() > timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS):
         return access_token
     return _refreshed(access_token, expires_at)
 
