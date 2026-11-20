@@ -51,8 +51,20 @@ def get_gateway_url() -> str:
 
 
 def get_access_token() -> Optional[str]:
-    """Get OAuth access token from auth module."""
-    return auth_module.get_access_token()
+    """The OAuth access token; exits when the gateway can't be reached."""
+    try:
+        return auth_module.get_access_token()
+    except auth_module.GatewayUnreachable as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+
+def _request_failed(what: str, error: requests.exceptions.RequestException) -> None:
+    """Report a failed request, naming the gateway when it didn't answer at all."""
+    if isinstance(error, requests.ConnectionError):
+        click.echo(str(auth_module.GatewayUnreachable(get_gateway_url())), err=True)
+    else:
+        click.echo(f"{what}: {error}", err=True)
 
 
 def require_auth():
@@ -129,7 +141,7 @@ def services():
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        click.echo(f"Failed to list services: {e}", err=True)
+        _request_failed("Failed to list services", e)
         sys.exit(1)
 
     servers = response.json()
@@ -165,7 +177,7 @@ def _mcp_request(service: str, method: str, params: Optional[dict] = None):
     except mcp_client.McpError as e:
         click.echo(f"{e}", err=True)
     except requests.exceptions.RequestException as e:
-        click.echo(f"The request to {service} failed: {e}", err=True)
+        _request_failed(f"The request to {service} failed", e)
     sys.exit(1)
 
 
@@ -267,7 +279,7 @@ def whoami():
         click.echo()
 
     except requests.exceptions.RequestException as e:
-        click.echo(f"Failed to get user info: {e}", err=True)
+        _request_failed("Failed to get user info", e)
         sys.exit(1)
 
 

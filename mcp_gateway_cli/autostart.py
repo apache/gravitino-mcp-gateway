@@ -32,6 +32,7 @@ from __future__ import annotations
 import platform
 import plistlib
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -55,6 +56,14 @@ class AutostartResult:
     status: str
     detail: str = ""
     path: Optional[str] = None
+
+
+_NO_SYSTEMD = AutostartResult(
+    "Linux",
+    STATUS_UNSUPPORTED,
+    "systemd isn't available, so the proxy won't start at login. "
+    "Start it with: gravitino-mcp proxy start",
+)
 
 
 def proxy_program_arguments() -> List[str]:
@@ -128,6 +137,11 @@ def systemd_unit_path() -> Path:
 # --------------------------------------------------------------------------- #
 # Platform dispatch
 # --------------------------------------------------------------------------- #
+def systemd_available() -> bool:
+    """Whether this Linux runs systemd, which containers and minimal installs don't."""
+    return shutil.which("systemctl") is not None
+
+
 def enable(
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     plist_path: Optional[Path] = None,
@@ -137,6 +151,8 @@ def enable(
     if system == "Darwin":
         return _enable_launchd(runner, plist_path or launchd_plist_path())
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         return _enable_systemd(runner, unit_path or systemd_unit_path())
     return AutostartResult(
         system, STATUS_UNSUPPORTED, "auto-start service not supported on this OS"
@@ -152,6 +168,8 @@ def disable(
     if system == "Darwin":
         return _disable_launchd(runner, plist_path or launchd_plist_path())
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         return _disable_systemd(runner, unit_path or systemd_unit_path())
     return AutostartResult(system, STATUS_UNSUPPORTED, "nothing to disable")
 
@@ -166,6 +184,8 @@ def status(
             system, STATUS_ENABLED if p.exists() else STATUS_DISABLED, path=str(p)
         )
     if system == "Linux":
+        if not systemd_available():
+            return _NO_SYSTEMD
         u = unit_path or systemd_unit_path()
         return AutostartResult(
             system, STATUS_ENABLED if u.exists() else STATUS_DISABLED, path=str(u)

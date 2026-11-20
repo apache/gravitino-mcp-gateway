@@ -18,11 +18,16 @@
 """Unit tests for mcp_gateway_cli.clients (multi-client config writers)."""
 
 import json
+from datetime import datetime, timedelta
 from subprocess import CompletedProcess
+from types import SimpleNamespace
 
 import pytest
+import requests
+from click.testing import CliRunner
 
-from mcp_gateway_cli import auth, clients
+from mcp_gateway_cli import auth, clients, mcp_client
+from mcp_gateway_cli.cli import cli as gravitino_mcp
 
 URL = "http://localhost:8001/mcp/trino"
 SERVERS = {"trino": URL}
@@ -196,3 +201,111 @@ def test_the_saved_token_goes_only_to_the_gateway_it_came_from(
         monkeypatch.delenv("MCP_GATEWAY_URL", raising=False)
 
     assert auth.get_access_token() == token
+
+
+def _signed_in(tmp_path, monkeypatch, lifetime, age):
+    """A saved sign-in whose token lasts ``lifetime`` seconds and was issued ``age`` seconds ago."""
+    token_file = tmp_path / "tokens"
+    monkeypatch.setattr(auth, "TOKEN_FILE", token_file)
+    monkeypatch.delenv("MCP_GATEWAY_URL", raising=False)
+    auth.save_tokens("access", "refresh", "https://gw.example.com", lifetime)
+    issued = datetime.utcnow() - timedelta(seconds=age)
+    saved = json.loads(token_file.read_text())
+    token_file.write_text(json.dumps({**saved, "created_at": issued.isoformat()}))
+
+
+def _unreachable(*args, **kwargs):
+    raise requests.ConnectionError("Connection refused")
+
+
+@pytest.mark.parametrize(
+    "lifetime, age, refreshed",
+    [
+        # Keycloak's tokens last 5 minutes, so a fresh one isn't refreshed yet.
+        (300, 10, False),
+        (300, 200, True),
+        (3600, 3000, False),
+        (3600, 3400, True),
+    ],
+)
+def test_a_token_is_refreshed_only_in_the_last_part_of_its_life(
+    tmp_path, monkeypatch, lifetime, age, refreshed
+):
+    _signed_in(tmp_path, monkeypatch, lifetime, age)
+    refreshes = []
+    monkeypatch.setattr(auth, "refresh_access_token", lambda: refreshes.append(1))
+
+    auth.get_access_token()
+
+    assert bool(refreshes) is refreshed
+
+
+def test_an_unreachable_gateway_is_not_taken_for_a_sign_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth.requests, "post", _unreachable)
+
+    # Due for a refresh, but still good: it's used.
+    _signed_in(tmp_path, monkeypatch, 300, 200)
+    assert auth.get_access_token() == "access"
+
+    # Expired: the gateway is named, and the sign-in is kept for when it's back.
+    _signed_in(tmp_path, monkeypatch, 300, 400)
+    with pytest.raises(auth.GatewayUnreachable, match="https://gw.example.com"):
+        auth.get_access_token()
+    assert (tmp_path / "tokens").exists()
+
+
+def test_the_cli_says_when_it_cant_reach_the_gateway(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth.requests, "post", _unreachable)
+    _signed_in(tmp_path, monkeypatch, 300, 400)
+
+    result = CliRunner().invoke(gravitino_mcp, ["services"])
+
+    assert result.exit_code == 1
+    assert "Cannot reach https://gw.example.com" in result.output
+    assert "login" not in result.output
+
+
+@pytest.mark.parametrize("opened", [True, False])
+def test_login_says_that_the_browser_opened_only_when_it_did(
+    tmp_path, monkeypatch, capsys, opened
+):
+    monkeypatch.setattr(auth, "TOKEN_FILE", tmp_path / "tokens")
+    monkeypatch.setattr(
+        auth,
+        "request_device_code",
+        lambda url: SimpleNamespace(
+            device_code="device",
+            user_code="ABCD-EFGH",
+            verification_uri="https://gw.example.com/device",
+            expires_in=600,
+            interval=5,
+        ),
+    )
+    monkeypatch.setattr(
+        auth,
+        "poll_device_token_until_done",
+        lambda *args, **kwargs: SimpleNamespace(
+            status=auth.PollStatus.EXPIRED, token_data=None
+        ),
+    )
+    monkeypatch.setattr(auth.webbrowser, "open", lambda url: opened)
+
+    auth.device_flow_login("https://gw.example.com")
+
+    output = capsys.readouterr().out
+    assert ("Browser opened automatically" in output) is opened
+    assert ("Open the URL above in a browser" in output) is not opened
+
+
+def test_a_call_says_when_it_cant_reach_the_gateway(tmp_path, monkeypatch):
+    """A token that's still good doesn't need the gateway, until the call itself."""
+    monkeypatch.setattr(mcp_client.requests, "post", _unreachable)
+    _signed_in(tmp_path, monkeypatch, 300, 10)
+
+    result = CliRunner().invoke(gravitino_mcp, ["call", "gravitino", "list_tools"])
+
+    assert result.exit_code == 1
+    assert result.output.strip() == (
+        "Cannot reach https://gw.example.com. "
+        "Check the URL and that your network can reach it."
+    )

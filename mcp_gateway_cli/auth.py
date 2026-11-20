@@ -34,6 +34,25 @@ from .device_flow import PollStatus, poll_device_token_until_done, request_devic
 
 TOKEN_FILE = CONFIG_DIR / "tokens"
 
+# A token is refreshed in the last part of its life: its last 5 minutes, or the
+# last half of a shorter one, such as Keycloak's default of 5 minutes.
+_REFRESH_MARGIN = timedelta(minutes=5)
+
+
+class GatewayUnreachable(Exception):
+    """The gateway didn't answer, as when it is down or the network can't reach it."""
+
+    def __init__(self, gateway_url: str):
+        super().__init__(
+            f"Cannot reach {gateway_url}. "
+            "Check the URL and that your network can reach it."
+        )
+
+
+def refresh_margin(lifetime_seconds: float) -> timedelta:
+    """How long before it expires a token with this lifetime is refreshed."""
+    return min(_REFRESH_MARGIN, timedelta(seconds=lifetime_seconds) / 2)
+
 
 def save_tokens(
     access_token: str,
@@ -139,12 +158,15 @@ def device_flow_login(gateway_url: str) -> bool:
     print(f"2. Enter this code: {user_code}")
     print("\n" + "=" * 60)
 
-    # Open browser automatically
     try:
-        webbrowser.open(verification_uri)
-        print("Browser opened automatically")
+        opened = webbrowser.open(verification_uri)
     except Exception:  # pylint: disable=broad-exception-caught
-        print("Warning: Please open the URL manually in your browser")
+        opened = False
+    print(
+        "Browser opened automatically"
+        if opened
+        else "Open the URL above in a browser, on any device"
+    )
 
     print(f"\nWaiting for approval (expires in {expires_in} seconds)...")
 
@@ -196,29 +218,36 @@ def get_access_token() -> Optional[str]:
         )
         return None
 
-    # Check if token is still valid
     access_token = tokens.get("access_token")
     created_at = tokens.get("created_at")
+    if not created_at:
+        return access_token
     expires_in = tokens.get("expires_in", 3600)
+    expires_at = datetime.fromisoformat(created_at) + timedelta(seconds=expires_in)
+    if expires_at - datetime.utcnow() > refresh_margin(expires_in):
+        return access_token
+    return _refreshed(access_token, expires_at)
 
-    if created_at:
-        created_dt = datetime.fromisoformat(created_at)
 
-        expires_at = created_dt + timedelta(seconds=expires_in)
+def _refreshed(access_token: Optional[str], expires_at: datetime) -> Optional[str]:
+    """A refreshed access token, or None once the sign-in has ended.
 
-        # If token expires in < 5 minutes, refresh it
-        if expires_at < datetime.utcnow() + timedelta(minutes=5):
-            print("Token expiring soon, refreshing...")
-            if refresh_access_token():
-                tokens = load_tokens()
-                return tokens.get("access_token") if tokens else None
-            # Refresh failed — don't return the expired token
-            print(
-                "Warning: Token refresh failed. Please run 'gravitino-mcp login' to re-authenticate."
-            )
-            return None
-
-    return access_token
+    While the gateway can't be reached, a token that hasn't expired is kept,
+    since it works once the gateway answers; after that, GatewayUnreachable.
+    """
+    try:
+        refreshed = refresh_access_token()
+    except GatewayUnreachable:
+        if expires_at > datetime.utcnow():
+            return access_token
+        raise
+    if refreshed:
+        tokens = load_tokens()
+        return tokens.get("access_token") if tokens else None
+    print(
+        "Warning: Token refresh failed. Please run 'gravitino-mcp login' to re-authenticate."
+    )
+    return None
 
 
 def refresh_access_token() -> bool:
@@ -262,6 +291,8 @@ def refresh_access_token() -> bool:
         )
         return False
 
+    except (requests.ConnectionError, requests.Timeout) as e:
+        raise GatewayUnreachable(gateway_url) from e
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Warning: Token refresh error: {e}")
         return False

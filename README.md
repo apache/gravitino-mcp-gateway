@@ -175,6 +175,9 @@ To have the gateway exchange tokens instead (RFC 8693), set
 `GRAVITINO_MCP_AUDIENCE=gravitino`. [setup-realm.sh][setup-realm] shows the
 Keycloak settings each needs.
 
+A server with its own sign-in can't use this Keycloak unless `DEBUG=true`, since
+the gateway sends sign-in codes and secrets only to https authorization servers.
+
 `MCP_GATEWAY_KEYCLOAK_TEST=1 uv run pytest -m integration tests/integration/test_keycloak.py`
 tests the gateway against this setup.
 
