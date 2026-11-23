@@ -21,7 +21,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apache-gravitino-mcp-gateway"
-version = "0.1.0.dev0"
+version = "0.2.0.dev0"
 description = "Apache Gravitino MCP Gateway: sign-in, access control and audit for MCP servers"
 readme = "README.md"
 license = "Apache-2.0"
