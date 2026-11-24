@@ -32,6 +32,8 @@ from ..models import (
     MCPAccessRequest,
     MCPCatalog,
     MCPUserPermission,
+    MCPVirtualMember,
+    MCPVirtualServer,
     OAuthToken,
     ServiceAccountCredentials,
     User,
@@ -320,7 +322,12 @@ async def create_mcp(
     existing = (
         db.query(MCPCatalog).filter(MCPCatalog.service_id == request.service_id).first()
     )
-    if existing:
+    virtual = (
+        db.query(MCPVirtualServer)
+        .filter(MCPVirtualServer.service_id == request.service_id)
+        .first()
+    )
+    if existing or virtual:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"MCP with service_id '{request.service_id}' already exists",
@@ -479,6 +486,7 @@ async def delete_mcp(
     db.query(OAuthToken).filter(OAuthToken.service == service_id).delete()
     db.query(MCPUserPermission).filter(MCPUserPermission.mcp_id == mcp.id).delete()
     db.query(MCPAccessRequest).filter(MCPAccessRequest.mcp_id == mcp.id).delete()
+    db.query(MCPVirtualMember).filter(MCPVirtualMember.mcp_id == mcp.id).delete()
 
     # Service accounts name their servers by id; a new server registered with
     # this id must not inherit them.

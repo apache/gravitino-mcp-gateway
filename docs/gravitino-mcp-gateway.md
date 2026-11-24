@@ -280,6 +280,42 @@ available:
 MCP_TOOL_FILTERS={"gravitino": ["get_", "list_", "load_", "metadata_"], "trino": ["query_"]}
 ```
 
+## Virtual servers
+
+A virtual server groups registered servers behind one URL, `/mcp/<virtual server ID>`, so a client
+configures one connection for several servers. Create one with the admin API:
+
+```bash
+curl -X POST "$GATEWAY/api/v1/admin/mcp-virtual/" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -d '{
+    "service_id": "data-tools", "name": "Data tools",
+    "members": [
+      {"service_id": "trino", "tool_prefix": "trino_"},
+      {"service_id": "gravitino", "tool_prefix": "gravitino_"}
+    ]
+  }'
+```
+
+`GET`, `PATCH` (members, when given, replace the old ones) and `DELETE` on
+`/api/v1/admin/mcp-virtual/[<ID>]` list, change and remove them. Deleting a virtual server leaves
+its members registered; deleting a member removes it from every virtual server.
+
+- `tools/list` asks each member the caller may use, with that member's own sign-in, and merges
+  the tools, each name starting with the member's `tool_prefix`. A member the caller can't use
+  (no approval, admin-only, inactive, not connected) is left out, and one that fails doesn't
+  hide the others.
+- `tools/call` goes to the member with the longest matching prefix, with the prefix removed.
+- A virtual server grants nothing. Each member's access, sign-in, tool filter and audit apply as
+  they do on the member's own URL, and the audit log records the member's ID and its own tool name.
+- Each member needs its own prefix (at most one may have none), and a virtual server's ID may not
+  be a server's. If two members would still offer the same name, `tools/list` answers with an
+  error naming the clash until a prefix is changed.
+- Sessions: the client's MCP session is a gateway token for the virtual server. Upstream, each
+  member keeps the one session per user and server it has today, shared with calls to the member
+  directly.
+- Like any server, a virtual server offers tools only: other methods answer "not supported", and
+  members' `nextCursor` paging isn't passed on.
+
 ## Review access requests
 
 `GET /api/v1/mcp-access/admin/pending` lists the pending requests, 25 to a page unless `page_size`
