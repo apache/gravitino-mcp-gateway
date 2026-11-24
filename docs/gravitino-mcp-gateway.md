@@ -109,6 +109,7 @@ The main settings are:
 | `ADMIN_EMAILS` | More admins, by email. Comma-separated. |
 | `USER_ID_CLAIM` | The claim that names people, `email` by default. |
 | `GRAVITINO_MCP_URL` | The Gravitino MCP server, registered as `gravitino` and open to everyone. |
+| `MCP_CATALOG_FILE` | A JSON file of MCP servers that the gateway applies at every start. See [Declare MCP servers in a file](#declare-mcp-servers-in-a-file). |
 | `GRAVITINO_MCP_AUDIENCE` | The audience Gravitino expects, when it differs from `JWT_AUDIENCE` and the gateway must exchange tokens. |
 | `CORS_ALLOWED_ORIGINS` | Origins that may call the gateway's API from a browser. Comma-separated. |
 | `DATABASE_URL` | The database. MySQL connections use TLS: `DATABASE_SSL_MODE` is `REQUIRED` by default, which doesn't check the server's certificate; `VERIFY_CA` and `VERIFY_IDENTITY` do, and `DISABLED` turns TLS off. Each replica keeps up to `DATABASE_POOL_SIZE` connections open and opens `DATABASE_MAX_OVERFLOW` more when busy, 10 each by default. |
@@ -145,6 +146,65 @@ Also:
 - Keep `/metrics` and the Gravitino MCP server off the public network. The gateway does not
   authenticate `/metrics`, and only it should reach the MCP server.
 - `GET /health` answers 200 while the gateway can reach its database, and 503 otherwise.
+
+### Run on Kubernetes
+
+`deploy/helm/gravitino-mcp-gateway` is a Helm chart: a Deployment, a Service, an optional Ingress and
+a PodDisruptionBudget, with the keys in a Secret, `/health` probes, and Prometheus scrape annotations
+for `/metrics`. Settings that aren't secret go under `config`, by the names in
+`mcp_gateway/config.py`, and secret ones under `secrets`:
+
+```bash
+helm install gateway deploy/helm/gravitino-mcp-gateway \
+  --set config.JWT_AUDIENCE=gravitino \
+  --set config.GATEWAY_BASE_URL=https://mcp-gateway.example.com \
+  --set config.CORS_ALLOWED_ORIGINS=https://gravitino.example.com \
+  --set config.OIDC_DISCOVERY_URL=https://keycloak.example.com/realms/gravitino/.well-known/openid-configuration \
+  --set secrets.JWT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
+  --set secrets.TOKEN_ENCRYPTION_KEY="$(python -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')" \
+  --set-file secrets.rsaPrivateKey=signing-key.pem \
+  --set secrets.extra.DATABASE_URL='mysql+pymysql://mcp_gateway:<password>@mysql:3306/mcp_gateway' \
+  --set ingress.enabled=true
+```
+
+To keep the keys out of Helm values, create a Secret with `JWT_SECRET_KEY`, `TOKEN_ENCRYPTION_KEY`,
+`DATABASE_URL` and `rsa-private-key.pem` (and any other secret setting) and name it in
+`secrets.existingSecret`. Pin `image.tag` to a release. The chart runs two replicas by default; they
+need the MySQL `DATABASE_URL`, since SQLite is lost with a pod. Changing a setting or the catalog
+restarts the pods.
+
+Replicas need no session affinity: clients' MCP session IDs are signed, refreshes lock a database
+row, and an upstream MCP session a replica doesn't hold is started on demand. See
+[ARCHITECTURE.md](https://github.com/apache/gravitino-mcp-gateway/blob/main/ARCHITECTURE.md#deployment).
+
+`/metrics` is not authenticated and the chart's Ingress should not route it: let only the scraper
+reach the pods, for example with a NetworkPolicy.
+
+### Declare MCP servers in a file
+
+Instead of calling the admin API, a deployment can declare its servers in a JSON file and set
+`MCP_CATALOG_FILE` to its path. With the chart, list them under `catalog.servers`, and it mounts
+them as a ConfigMap:
+
+```json
+{"servers": [{"service_id": "trino", "name": "Trino", "mcp_url": "http://trino-mcp:8000/mcp",
+              "auto_sso_enabled": true, "audience": "trino-mcp", "requires_approval": false}]}
+```
+
+An entry has the fields of `POST /api/v1/admin/mcp/`, except `basic_auth_password` and
+`oauth_client_secret`, which a file must not hold. At every start, each replica makes the listed
+servers match the file:
+
+- The file wins. A listed server that doesn't exist is added, and one that does gets every declared
+  field, so an admin's change in the web UI or through the API to a declared server is undone at the
+  next start. The file also wins over the `gravitino` server that `GRAVITINO_MCP_URL` registers.
+- Servers the file doesn't list are left as they are, and removing an entry doesn't delete or
+  deactivate the server. Set `is_active: false` to switch one off.
+- Secrets stored for a listed server stay, unless its address moves: then they are removed, as are
+  the tokens people hold for it, as when an admin moves a server. Set a server's secrets through the
+  admin API.
+- A file that can't be read, holds an unknown field or an invalid entry, or lists a `service_id`
+  twice stops the gateway from starting, and nothing is applied.
 
 ### Tokens and audiences
 

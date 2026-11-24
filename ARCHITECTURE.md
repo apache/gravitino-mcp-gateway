@@ -167,9 +167,30 @@ created at startup:
 
 ## Deployment
 
-`docker build -f docker/Dockerfile .` builds the gateway's image. It
-keeps its state in the database, except upstream MCP sessions and the refresh
-locks, which each process holds in memory. To run more than one replica, point
-them at the same MySQL database and give them the same `JWT_SECRET_KEY`,
-encryption key and RSA key. `ENVIRONMENT=production` refuses settings that are
-only safe for development.
+`docker build -f docker/Dockerfile .` builds the gateway's image, and
+`deploy/helm/gravitino-mcp-gateway` is a Helm chart for it. Replicas share
+nothing but the database, and any replica can serve any request:
+
+- The session ID that clients hold is a signed token (`JWT_SECRET_KEY`), so
+  every replica can check it.
+- Refreshes of a person's token serialize on a row lock in the database, with an
+  in-process lock in front of it.
+- The one thing a process keeps to itself is its cache of upstream MCP
+  sessions, one per person and server. A replica without an entry sends
+  `initialize` and keeps the new session, and an upstream server that forgot a
+  session answers 404, which does the same. So a request that reaches another
+  replica costs one `initialize`. The gateway does not carry upstream session
+  IDs in the client's token or ask for session affinity: it only calls tools,
+  and each call stands alone, so a session has no state worth keeping. A server
+  that holds state between calls in its session would see a new session per
+  replica.
+
+To run more than one replica, point them at the same MySQL database and give
+them the same `JWT_SECRET_KEY`, encryption key and RSA key.
+`ENVIRONMENT=production` refuses settings that are only safe for development.
+
+`MCP_CATALOG_FILE` names a JSON file of MCP servers (`catalog_file.py`), such as
+a mounted ConfigMap. At startup, after `GRAVITINO_MCP_URL`'s default, each
+replica makes the listed servers match it, so the file wins over the admin API
+and the default. Servers it doesn't list, and the secrets stored for those it
+does, are left alone. A bad file stops the start.

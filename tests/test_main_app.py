@@ -35,6 +35,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
 from mcp_gateway.body_limit import BodySizeLimitMiddleware
+from mcp_gateway.catalog_file import CatalogFileError
 from mcp_gateway.config import settings
 from mcp_gateway.gateway_keys import get_kid, get_private_key
 from mcp_gateway.main import app, cors_options, lifespan
@@ -297,6 +298,29 @@ async def test_startup_registers_the_gravitino_mcp_server(monkeypatch):
         pass
 
     register.assert_called_once()
+
+
+async def test_startup_loads_the_catalog_file_after_the_defaults(monkeypatch):
+    calls = MagicMock()
+    monkeypatch.setattr(settings, "MCP_CATALOG_FILE", "/etc/catalog.json")
+    monkeypatch.setattr("mcp_gateway.main.register_gravitino_mcp", calls.register)
+    monkeypatch.setattr("mcp_gateway.main.load_catalog_file", calls.load)
+
+    async with lifespan(app):
+        pass
+
+    assert [c[0] for c in calls.mock_calls] == ["register", "load"]
+    assert calls.load.call_args.args[1] == "/etc/catalog.json"
+
+
+async def test_a_bad_catalog_file_stops_the_start(monkeypatch, tmp_path):
+    bad = tmp_path / "catalog.json"
+    bad.write_text("not json")
+    monkeypatch.setattr(settings, "MCP_CATALOG_FILE", str(bad))
+
+    with pytest.raises(CatalogFileError):
+        async with lifespan(app):
+            pass
 
 
 async def test_a_fully_configured_slack_bot_is_started_and_stopped(slack, monkeypatch):

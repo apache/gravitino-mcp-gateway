@@ -1,0 +1,131 @@
+{{- /*
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gmg.fullname" . }}
+  labels:
+    {{- include "gmg.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "gmg.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # A changed setting or catalog restarts the pods, which read both at start.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.secrets.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.metrics.annotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "gmg.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: GATEWAY_RSA_PRIVATE_KEY_FILE
+              value: /etc/gateway/secrets/rsa-private-key.pem
+          envFrom:
+            - configMapRef:
+                name: {{ include "gmg.fullname" . }}
+            - secretRef:
+                name: {{ include "gmg.secretName" . }}
+          ports:
+            - name: http
+              containerPort: 8000
+          # /health is 503 while the database is down, so it only gates traffic:
+          # restarting pods would not bring the database back.
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: secrets
+              mountPath: /etc/gateway/secrets
+              readOnly: true
+            {{- if .Values.catalog.servers }}
+            - name: catalog
+              mountPath: /etc/gateway/catalog
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "gmg.secretName" . }}
+            items:
+              - key: rsa-private-key.pem
+                path: rsa-private-key.pem
+            # The uid the gateway runs as is not the file's owner.
+            defaultMode: 0440
+        {{- if .Values.catalog.servers }}
+        - name: catalog
+          configMap:
+            name: {{ include "gmg.fullname" . }}-catalog
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
