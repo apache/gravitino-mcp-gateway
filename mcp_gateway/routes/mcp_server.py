@@ -58,6 +58,7 @@ from ..oauth_auth import (
     get_user_from_bearer_token,
     get_workload_forward_headers,
 )
+from ..telemetry import span
 from .mcp_upstream import (
     MCP_PROTOCOL_VERSION,
     ensure_upstream_session,
@@ -543,6 +544,20 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
         request_id = body.get("id") if isinstance(body, dict) else None
         return _rpc_error(request_id, -32600, f"Invalid Request: {invalid}", 400)
 
+    method = body.get("method", "unknown")
+    attributes = {"mcp.server.id": service, "mcp.method": method}
+    if method == "tools/call":
+        attributes["mcp.tool.name"] = body["params"]["name"]
+    # Continues the caller's trace, if its request carries one. A streamed tool
+    # call's reply outlives this span; the "mcp.upstream" span times the call.
+    with span("mcp.request", attributes, headers=request.headers):
+        return await _proxy_message(service, request, db, current_user, body)
+
+
+async def _proxy_message(  # pylint: disable=too-many-return-statements
+    service: str, request: Request, db: Session, current_user: User, body: dict
+):
+    """Answer a valid JSON-RPC message, as ``mcp_proxy`` describes."""
     method = body.get("method", "unknown")
     request_id = body.get("id")
 

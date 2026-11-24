@@ -118,6 +118,7 @@ The main settings are:
 | `MCP_FORWARD_HEADERS` | Headers of the caller's that the gateway passes on to MCP servers, such as an API key a server needs. Comma-separated. Headers the gateway sets itself, such as `Authorization` and `Cookie`, can't be listed. |
 | `AUDIT_LOG_RESPONSES`, `AUDIT_RETENTION_DAYS` | Whether the audit log keeps responses, off by default, and how many days it keeps calls, 90 by default; 0 keeps them for ever. |
 | `HOST`, `PORT` | Where the gateway listens, `0.0.0.0` and `8000` by default. |
+| `OTEL_ENABLED` | Export OpenTelemetry traces over OTLP. Off by default. See [Traces](#traces). |
 | `MAX_REQUEST_BYTES` | The largest request body the gateway reads, 10 MiB by default. |
 | `ENVIRONMENT` | `production`, which the Docker image sets, turns on the checks in [In production](#in-production). |
 
@@ -324,6 +325,32 @@ response, so admins can read them. Arguments whose names look like secrets, such
 `token` or `api_key`, are kept as `[redacted]`. Arguments or a response longer than 10,000
 characters are kept as their first 1,000, with the original's size and SHA-256. The gateway deletes
 calls older than `AUDIT_RETENTION_DAYS`, 90 days by default.
+
+## Traces
+
+The gateway can export OpenTelemetry traces over OTLP/HTTP, to a collector or a tracing backend.
+Prometheus metrics at `/metrics` are unchanged, and logs and metrics are not exported over OTLP yet.
+
+Install the `otel` extra (the Docker image has it) and set `OTEL_ENABLED=true`, with the standard
+OpenTelemetry variables for where to send them, such as `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_SERVICE_NAME` (`mcp-gateway` by default):
+
+```bash
+pip install "apache-gravitino-mcp-gateway[otel]"
+```
+
+The gateway refuses to start with `OTEL_ENABLED` and without the extra. Without `OTEL_ENABLED`
+nothing is recorded or sent.
+
+Each request to `/mcp/<server ID>` is a span, `mcp.request`, with the attributes `mcp.server.id`,
+`mcp.method` and, for `tools/call`, `mcp.tool.name`. Its child spans are `mcp.token_exchange` and
+`mcp.token_refresh`, when the call needed one, and `mcp.upstream`, the call to the server. The
+spans never hold arguments, tokens or emails. A streamed tool call's reply outlives `mcp.request`,
+so read the call's time from `mcp.upstream`.
+
+A request that carries a W3C `traceparent` header continues that trace, and the gateway sends its
+own `traceparent` to the MCP server, so the server's spans join the trace. Requests to other
+paths are not traced.
 
 ## Service accounts
 

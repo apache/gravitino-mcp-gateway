@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # reachable only by the scraper.
     METRICS_ENABLED: bool = True
 
+    # Export OpenTelemetry traces over OTLP. Needs the "otel" extra; the
+    # endpoint comes from the standard OTEL_EXPORTER_OTLP_* variables.
+    OTEL_ENABLED: bool = False
+
     # Origins that may call the API from a browser, comma-separated, such as
     # Gravitino's web UI. "*" is for development only.
     CORS_ALLOWED_ORIGINS: str = "*"
