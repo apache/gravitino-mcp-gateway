@@ -46,6 +46,7 @@ github:
   dependabot_updates: false
   collaborators:
     - markhoerth
+    - laserninja
 notifications:
   commits: commits@gravitino.apache.org
   issues: commits@gravitino.apache.org
