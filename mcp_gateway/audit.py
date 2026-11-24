@@ -167,7 +167,7 @@ class AuditLogger:
             request_headers: SA workload headers only (from get_workload_forward_headers), or None
             response_data: Response from the tool (may be truncated for large responses)
             status: "success", "error", "unauthorized" (the gateway refused
-                the call) or "cancelled" (the client left before it finished)
+                the call), "rate_limited" or "cancelled" (the client left before it finished)
             error_message: Error message if status is "error"
             duration_ms: Request duration in milliseconds
             ip_address: Client IP address
@@ -303,8 +303,10 @@ async def log_refusal(  # pylint: disable=too-many-arguments
     request_params: Optional[Dict[str, Any]],
     request: Request,
     reason: str,
+    status: str = "unauthorized",
 ) -> None:
-    """Record a call the gateway refused, such as one without access."""
+    """Record a call the gateway refused: "unauthorized" for want of access,
+    or "rate_limited"."""
     tool_name = (request_params or {}).get("name") if method == "tools/call" else None
     await _record(
         db,
@@ -318,7 +320,7 @@ async def log_refusal(  # pylint: disable=too-many-arguments
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         response_data=None,
-        status="unauthorized",
+        status=status,
         error_message=reason,
         duration_ms=0,
     )

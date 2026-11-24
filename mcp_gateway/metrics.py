@@ -20,8 +20,8 @@ Prometheus metrics for MCP Gateway.
 
 Exposes a ``/metrics`` endpoint plus a small, deliberately-chosen set of
 high-signal custom metrics for monitoring gateway health and debugging
-outages.  We instrument only code paths that exist today — no dead metrics
-for features that aren't built yet (rate limiting, caching, circuit breaker).
+outages.  We instrument only code paths that exist today - no dead metrics
+for features that aren't built yet (caching, circuit breaker).
 
 HTTP layer (automatic, via prometheus-fastapi-instrumentator):
   - http_request_duration_highr_seconds      → latency P50/P95/P99 (high-res, no route label)
@@ -36,6 +36,7 @@ HTTP layer (automatic, via prometheus-fastapi-instrumentator):
 MCP proxy (custom):
   - mcp_gateway_tool_calls_total{service,tool,status}
   - mcp_gateway_tool_call_duration_seconds{service,tool}
+  - mcp_gateway_rate_limited_total{service,scope}
 
 Auth / tokens (custom):
   - mcp_gateway_token_refresh_total{service,result}
@@ -89,6 +90,12 @@ MCP_TOOL_CALL_DURATION = Histogram(
         600.0,
         1200.0,
     ),
+)
+
+MCP_RATE_LIMITED = Counter(
+    "mcp_gateway_rate_limited_total",
+    "MCP calls refused because a rate limit was reached, by server and scope.",
+    ["service", "scope"],
 )
 
 TOKEN_REFRESH = Counter(
@@ -162,6 +169,15 @@ def record_tool_call(
     except Exception:  # pylint: disable=broad-exception-caught
         # Metrics must not break requests.
         logger.debug("Failed to record MCP tool-call metric", exc_info=True)
+
+
+def record_rate_limited(service: Optional[str], scope: str) -> None:
+    """Record a call refused by a rate limit; ``scope`` is user, server or tool."""
+    try:
+        MCP_RATE_LIMITED.labels(service=service or "unknown", scope=scope).inc()
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Metrics must not break requests.
+        logger.debug("Failed to record rate-limit metric", exc_info=True)
 
 
 def record_token_refresh(service: Optional[str], success: bool) -> None:

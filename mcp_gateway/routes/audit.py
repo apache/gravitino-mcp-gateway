@@ -148,7 +148,7 @@ async def get_audit_logs(
     Filters:
     - service: Filter by MCP service (e.g., "gravitino")
     - tool_name: Filter by tool name
-    - status: Filter by status ("success", "error", "unauthorized", "cancelled")
+    - status: Filter by status ("success", "error", "unauthorized", "rate_limited", "cancelled")
     - user_id: Filter by user (admins only)
     - start_date: Filter by date range start
     - end_date: Filter by date range end

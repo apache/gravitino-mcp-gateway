@@ -115,6 +115,7 @@ The main settings are:
 | `UPSTREAM_TLS_VERIFY` | `true`, `false`, or the path of a CA bundle, for MCP servers and their authorization servers with private certificates. For an identity provider with a private certificate, set `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to a bundle that includes its CA. |
 | `MCP_TOOL_FILTERS` | The tools each MCP server exposes. See [Tool filters](#tool-filters). |
 | `MCP_TOOL_CALL_TIMEOUT` | Seconds a tool call may take, 1200 by default. |
+| `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_{USER,SERVER,TOOL}_REQUESTS`, `RATE_LIMIT_{USER,SERVER,TOOL}_CONCURRENT` | Rate limits on MCP calls, 0 for none. See [Rate limits](#rate-limits). |
 | `MCP_FORWARD_HEADERS` | Headers of the caller's that the gateway passes on to MCP servers, such as an API key a server needs. Comma-separated. Headers the gateway sets itself, such as `Authorization` and `Cookie`, can't be listed. |
 | `AUDIT_LOG_RESPONSES`, `AUDIT_RETENTION_DAYS` | Whether the audit log keeps responses, off by default, and how many days it keeps calls, 90 by default; 0 keeps them for ever. |
 | `HOST`, `PORT` | Where the gateway listens, `0.0.0.0` and `8000` by default. |
@@ -280,6 +281,40 @@ available:
 MCP_TOOL_FILTERS={"gravitino": ["get_", "list_", "load_", "metadata_"], "trino": ["query_"]}
 ```
 
+### Rate limits
+
+The gateway limits calls to `/mcp/<server ID>` so that one person or a runaway agent can't flood
+a server, or the upstream credential that people share. Three scopes are limited, each by
+requests per window and by calls in flight at once:
+
+| Scope | What it counts | Settings (defaults) |
+| --- | --- | --- |
+| `user` | One person's calls to one server | `RATE_LIMIT_USER_REQUESTS` (600), `RATE_LIMIT_USER_CONCURRENT` (20) |
+| `server` | Everyone's calls to one server | `RATE_LIMIT_SERVER_REQUESTS` (0), `RATE_LIMIT_SERVER_CONCURRENT` (0) |
+| `tool` | One person's calls of one tool (`tools/call`) | `RATE_LIMIT_TOOL_REQUESTS` (0), `RATE_LIMIT_TOOL_CONCURRENT` (0) |
+
+The window is `RATE_LIMIT_WINDOW_SECONDS` long, 60 by default (1 to 3600), and a limit of 0 is no
+limit. Every request to a server counts, `tools/list` included; `initialize` doesn't. A call over a
+limit isn't sent to the server. The gateway answers HTTP 429 with a `Retry-After` header and a
+JSON-RPC error, code `-32005`, writes the call to the audit log as `rate_limited`, and counts it in
+`mcp_gateway_rate_limited_total{service,scope}`.
+
+A server's `rate_limits` overrides the defaults for that server, when it is added or changed
+(`null` removes them). It takes `user_requests`, `server_requests`, `tool_requests`,
+`user_concurrent`, `server_concurrent` and `tool_concurrent`, and `tools`, limits by tool name:
+
+```json
+{"rate_limits": {"user_requests": 60, "tools": {"execute_query": {"requests": 10, "concurrent": 2}}}}
+```
+
+With several replicas, requests per window are counted in the gateway's database (fixed windows,
+in the `rate_limit_windows` table), so each limit holds across all of them, with no service to run
+besides the database. Calls in flight are counted in each replica's memory: a count in the
+database would outlive a replica that died mid-call and lock people out. A concurrent limit is
+therefore per replica, and the most a limit lets through in all is the limit times the replicas.
+If the database can't be reached when a call is counted, the call is let through. Fixed windows
+allow up to twice a limit around the edge between two windows.
+
 ## Review access requests
 
 `GET /api/v1/mcp-access/admin/pending` lists the pending requests, 25 to a page unless `page_size`
@@ -306,7 +341,8 @@ next call.
 
 - every request the gateway passes to a server, `tools/list` included, with the method as the tool
   name for anything but a tool call;
-- every call to a server that it refuses for want of access, as `unauthorized`;
+- every call to a server that it refuses for want of access, as `unauthorized`, and every call
+  over a [rate limit](#rate-limits), as `rate_limited`;
 - every tool call whose client left before it finished, as `cancelled`, since it may still have
   run;
 - every change an admin makes to a server or a service account.
@@ -316,7 +352,7 @@ recorded.
 
 Each person sees their own calls; admins see everyone's, and can narrow the list to one account with
 its numeric `user_id`, as the log's entries give it. `service`, `tool_name` and `status` (`success`,
-`error`, `unauthorized` or `cancelled`) narrow it further, `start_date` and `end_date` bound the
+`error`, `unauthorized`, `rate_limited` or `cancelled`) narrow it further, `start_date` and `end_date` bound the
 period, and `limit`, 100 by default and up to 1,000, and `offset` page through it.
 `GET /api/v1/audit/logs/export/csv` exports what the caller sees as CSV, with the same filters, up to
 the latest 10,000 calls. The log keeps each call's arguments, and with `AUDIT_LOG_RESPONSES` its

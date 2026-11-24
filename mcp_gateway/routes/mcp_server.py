@@ -40,12 +40,12 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import VERSION
+from .. import VERSION, rate_limit
 from ..audit import CANCELLED, AuditLogger, log_refusal, tool_call_failure
 from ..config import settings
 from ..database import SessionLocal, get_db
 from ..gateway_keys import mint_gateway_jwt
-from ..metrics import metric_method
+from ..metrics import metric_method, record_rate_limited
 from ..models import MCPCatalog, MCPUserPermission, ServiceAccountCredentials, User
 from ..oauth.mcp_service_auth import (
     build_credential_forward_headers,
@@ -212,7 +212,7 @@ def _tool_call_outcome(backend_task: asyncio.Task, request_id, service: str):
     return message, "error" if failure is not None else "success", failure
 
 
-def _stream_tool_call(  # pylint: disable=too-many-arguments
+def _stream_tool_call(  # pylint: disable=too-many-arguments,too-many-locals
     body: dict,
     request_id,
     mcp,
@@ -220,6 +220,7 @@ def _stream_tool_call(  # pylint: disable=too-many-arguments
     current_user: User,
     method: str,
     request: Request,
+    admission: rate_limit.Admission,
 ) -> StreamingResponse:
     """
     Stream an MCP tool call response using SSE with periodic heartbeats.
@@ -228,6 +229,9 @@ def _stream_tool_call(  # pylint: disable=too-many-arguments
     during long-running backend operations like Trino queries.  Heartbeat
     comments (`: heartbeat`) keep the TCP connection alive while the backend
     processes the request.
+
+    The call holds ``admission`` until the upstream call ends, even if the
+    client leaves first.
 
     The request's DB session is not held while streaming: the audit row is
     written with a short-lived session once the call ends, or the client
@@ -256,6 +260,7 @@ def _stream_tool_call(  # pylint: disable=too-many-arguments
             service,
         )
     )
+    backend_task.add_done_callback(lambda _: admission.release())
 
     async def _log_audit(response_data, status, error_message, duration_ms):
         """Write audit log using a fresh short-lived DB session."""
@@ -519,7 +524,7 @@ async def _upstream_auth_headers(
 
 
 @router.post("/{service}")
-async def mcp_proxy(  # pylint: disable=too-many-return-statements
+async def mcp_proxy(  # pylint: disable=too-many-return-statements,too-many-locals
     service: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -586,37 +591,93 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
             request_id, refusal.code, refusal.message, refusal.status_code
         )
 
+    tool = params["name"] if method == "tools/call" else None
+    try:
+        admission = rate_limit.admit(current_user.id, mcp, tool)
+    except rate_limit.RateLimited as limited:
+        return await _rate_limited(db, request, current_user, mcp, body, limited)
+
     # Nothing more is read from the database until the audit row, so the
     # connection goes back to the pool for the upstream calls, however long.
     _release(db, mcp, current_user)
+    return await _serve(db, request, current_user, mcp, body, auth_headers, admission)
 
-    # Some servers need an initialize handshake first, and then their session id.
-    upstream_sid = await ensure_upstream_session(
-        _get_mcp_http_client(),
-        mcp.mcp_url,
-        auth_headers,
-        {
-            **get_workload_forward_headers(request),
-            **get_passthrough_forward_headers(request),
-        },
-        current_user.id,
-        service,
+
+async def _rate_limited(  # pylint: disable=too-many-arguments
+    db: Session,
+    request: Request,
+    user: User,
+    mcp: MCPCatalog,
+    body: dict,
+    limited: rate_limit.RateLimited,
+) -> JSONResponse:
+    """The 429 for a call over a limit, audited and counted."""
+    record_rate_limited(mcp.service_id, limited.scope)
+    await log_refusal(
+        db,
+        user,
+        mcp.service_id,
+        body["method"],
+        body.get("params", {}),
+        request,
+        limited.message,
+        status="rate_limited",
     )
-    if upstream_sid:
-        auth_headers["Mcp-Session-Id"] = upstream_sid
+    return JSONResponse(
+        _rpc_message(body.get("id"), -32005, limited.message),
+        status_code=429,
+        headers={"Retry-After": str(limited.retry_after)},
+    )
 
-    # Tool calls stream, with heartbeats, so long ones aren't cut off as idle.
-    if method == "tools/call":
-        return _stream_tool_call(
-            body=body,
-            request_id=request_id,
-            mcp=mcp,
-            auth_headers=auth_headers,
-            current_user=current_user,
-            method=method,
-            request=request,
+
+async def _serve(  # pylint: disable=too-many-arguments
+    db: Session,
+    request: Request,
+    current_user: User,
+    mcp: MCPCatalog,
+    body: dict,
+    auth_headers: dict,
+    admission: rate_limit.Admission,
+):
+    """Send an admitted request to the server, and free ``admission`` once it ends."""
+    service = mcp.service_id
+    method = body["method"]
+    # A tool call's stream holds the admission until its upstream call ends.
+    handed_off = False
+    try:
+        # Some servers need an initialize handshake first, and then their session id.
+        upstream_sid = await ensure_upstream_session(
+            _get_mcp_http_client(),
+            mcp.mcp_url,
+            auth_headers,
+            {
+                **get_workload_forward_headers(request),
+                **get_passthrough_forward_headers(request),
+            },
+            current_user.id,
+            service,
         )
-    return await _forward(db, request, current_user, mcp, body, auth_headers)
+        if upstream_sid:
+            auth_headers["Mcp-Session-Id"] = upstream_sid
+
+        # Tool calls stream, with heartbeats, so long ones aren't cut off as idle.
+        if method == "tools/call":
+            response = _stream_tool_call(
+                body=body,
+                request_id=body.get("id"),
+                mcp=mcp,
+                auth_headers=auth_headers,
+                current_user=current_user,
+                method=method,
+                request=request,
+                admission=admission,
+            )
+            handed_off = True
+            return response
+        return await _forward(db, request, current_user, mcp, body, auth_headers)
+    finally:
+        if not handed_off:
+            admission.release()
 
 
 def _initialize_reply(request_id, user: User, service: str) -> JSONResponse:

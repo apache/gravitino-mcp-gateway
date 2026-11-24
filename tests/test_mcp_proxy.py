@@ -789,6 +789,7 @@ async def test_a_stream_the_client_leaves_is_audited_as_cancelled(
             current_user=regular_user,
             method="tools/call",
             request=make_starlette_request(method="POST", path="/mcp/trino"),
+            admission=mcp_server.rate_limit.Admission([]),
         )
         stream = response.body_iterator
         assert await anext(stream) == ": heartbeat\n\n"
