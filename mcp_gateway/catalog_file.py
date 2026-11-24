@@ -28,7 +28,7 @@ secrets stored for the listed ones; set those through the admin API.
 import json
 import logging
 
-from pydantic import ConfigDict, ValidationError, model_validator
+from pydantic import ConfigDict, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
