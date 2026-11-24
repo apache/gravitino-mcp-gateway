@@ -42,6 +42,7 @@ from mcp_gateway.models import (
     ServiceAccountCredentials,
 )
 from mcp_gateway.routes import mcp_server
+from mcp_gateway.routes.mcp_tasks import wrap_task_ids
 from tests.request_utils import make_starlette_request
 
 # Headers the gateway itself sets on every call to a server.
@@ -815,3 +816,190 @@ def test_the_database_connection_is_released_while_the_server_works(
 
     assert resp.status_code == 200
     assert in_transaction and not any(in_transaction)
+
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+
+
+def _result_message(result):
+    return {"jsonrpc": "2.0", "id": 1, "result": result}
+
+
+def _created_task(client, upstream, task_id="srv-task-1", **task):
+    """Run a task-augmented tool call; the task ID the caller is given."""
+    upstream(_result({"task": {"taskId": task_id, "status": "working", **task}}))
+    resp = client.post(
+        "/mcp/trino", json=_jsonrpc("tools/call", {"name": "q", "task": {"ttl": 60000}})
+    )
+    return _message(resp)["result"]["task"]["taskId"]
+
+
+def test_initialize_offers_tasks_for_tool_calls_and_cancel_but_not_list(
+    client, person
+):
+    resp = client.post("/mcp/trino", json=_jsonrpc("initialize"))
+
+    tasks = resp.json()["result"]["capabilities"]["tasks"]
+    assert tasks == {"requests": {"tools": {"call": {}}}, "cancel": {}}
+
+
+def test_a_task_the_server_creates_gets_an_id_that_is_not_the_servers(
+    client, person, mcp_entry, upstream
+):
+    backend = upstream(_result({"task": {"taskId": "srv-task-1", "status": "working"}}))
+
+    resp = client.post(
+        "/mcp/trino", json=_jsonrpc("tools/call", {"name": "q", "task": {"ttl": 1000}})
+    )
+
+    task = _message(resp)["result"]["task"]
+    assert task["status"] == "working"
+    assert task["taskId"] != "srv-task-1"
+    # The server is sent the task request as it was.
+    assert _sent(backend, "tools/call") is not None
+
+
+@pytest.mark.parametrize("method", ["tasks/get", "tasks/cancel", "tasks/result"])
+def test_a_task_request_reaches_the_server_under_its_own_id(
+    client, person, mcp_entry, upstream, method
+):
+    backend = upstream(_result({"task": {"taskId": "srv-task-1", "status": "working"}}))
+    task_id = _created_task(client, upstream)
+    backend = upstream(_result({"taskId": "srv-task-1", "status": "completed"}))
+
+    resp = client.post("/mcp/trino", json=_jsonrpc(method, {"taskId": task_id}))
+
+    sent = [c.kwargs["json"] for c in backend.post.await_args_list]
+    assert [m["params"] for m in sent if m["method"] == method] == [
+        {"taskId": "srv-task-1"}
+    ]
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("method", ["tasks/get", "tasks/cancel"])
+def test_a_task_the_server_reports_keeps_the_callers_id(
+    client, person, mcp_entry, upstream, method
+):
+    task_id = _created_task(client, upstream)
+    upstream(_result({"taskId": "srv-task-1", "status": "completed"}))
+
+    resp = client.post("/mcp/trino", json=_jsonrpc(method, {"taskId": task_id}))
+
+    result = _message(resp)["result"]
+    assert result["status"] == "completed"
+    assert result["taskId"] != "srv-task-1"
+
+
+def test_a_task_result_names_the_task_by_the_callers_id(
+    client, person, mcp_entry, upstream
+):
+    task_id = _created_task(client, upstream)
+    related = {"io.modelcontextprotocol/related-task": {"taskId": "srv-task-1"}}
+    upstream(_result({"content": [], "_meta": related}))
+
+    resp = client.post("/mcp/trino", json=_jsonrpc("tasks/result", {"taskId": task_id}))
+
+    meta = _message(resp)["result"]["_meta"]
+    assert meta["io.modelcontextprotocol/related-task"]["taskId"] != "srv-task-1"
+
+
+def test_another_person_cannot_use_a_task(
+    client, person, regular_user, mcp_entry, upstream
+):
+    someone_else = wrap_task_ids(
+        _result_message({"task": {"taskId": "srv-task-1"}}),
+        regular_user.id + 1000,
+        "trino",
+        "tools/call",
+    )["result"]["task"]["taskId"]
+    backend = upstream()
+
+    resp = client.post(
+        "/mcp/trino", json=_jsonrpc("tasks/get", {"taskId": someone_else})
+    )
+
+    assert _message(resp)["error"]["code"] == -32602
+    assert _sent(backend, "tasks/get") is None
+
+
+def test_a_task_cannot_be_used_on_another_server(
+    client, person, mcp_entry, db_session, upstream
+):
+    task_id = _created_task(client, upstream)
+    db_session.add(
+        MCPCatalog(
+            service_id="other",
+            name="Other",
+            description="Another server",
+            mcp_url="http://other:8080/mcp",
+            auto_sso_enabled=False,
+            is_active=True,
+            requires_approval=False,
+        )
+    )
+    db_session.commit()
+    backend = upstream()
+
+    resp = client.post("/mcp/other", json=_jsonrpc("tasks/get", {"taskId": task_id}))
+
+    assert _message(resp)["error"]["code"] == -32602
+    assert _sent(backend, "tasks/get") is None
+
+
+@pytest.mark.parametrize(
+    "params", [{}, {"taskId": 7}, {"taskId": "srv-task-1"}, {"taskId": "a.b.c"}]
+)
+def test_an_unknown_task_is_refused_without_calling_the_server(
+    client, person, mcp_entry, upstream, params
+):
+    backend = upstream()
+
+    resp = client.post("/mcp/trino", json=_jsonrpc("tasks/get", params))
+
+    assert _message(resp)["error"] == {"code": -32602, "message": "Unknown task"}
+    assert _sent(backend, "tasks/get") is None
+
+
+def test_a_session_id_is_not_a_task_id_and_a_task_id_is_not_a_session_id(
+    client, person, regular_user, mcp_entry, upstream
+):
+    resp = client.post("/mcp/trino", json=_jsonrpc("initialize"))
+    session_id = resp.headers["mcp-session-id"]
+    task_id = _created_task(client, upstream)
+    backend = upstream()
+
+    as_task = client.post(
+        "/mcp/trino", json=_jsonrpc("tasks/get", {"taskId": session_id})
+    )
+    as_session = client.post(
+        "/mcp/trino",
+        json=_jsonrpc("tools/list"),
+        headers={"Mcp-Session-Id": task_id},
+    )
+
+    assert _message(as_task)["error"]["code"] == -32602
+    assert as_session.status_code == 404
+    assert backend.post.await_count == 0
+
+
+def test_listing_tasks_is_not_supported(client, person, mcp_entry, upstream):
+    backend = upstream()
+
+    resp = client.post("/mcp/trino", json=_jsonrpc("tasks/list"))
+
+    assert _message(resp)["error"]["code"] == -32601
+    assert _sent(backend, "tasks/list") is None
+
+
+def test_a_task_the_server_sends_without_an_id_is_not_passed_on(
+    client, person, mcp_entry, upstream
+):
+    upstream(_result({"task": {"status": "working"}}))
+
+    resp = client.post(
+        "/mcp/trino", json=_jsonrpc("tools/call", {"name": "q", "task": {}})
+    )
+
+    assert "task" not in _message(resp)["result"]

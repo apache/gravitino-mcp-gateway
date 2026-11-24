@@ -92,7 +92,7 @@ def filter_tools(service: str, tools: list[dict]) -> list[dict]:
 # session, which needs no initialize again until the entry expires.
 _upstream_sessions: dict[tuple[int, str], tuple[str, float]] = {}
 _UPSTREAM_SESSION_TTL = 3600  # 1 hour
-MCP_PROTOCOL_VERSION = "2025-03-26"
+MCP_PROTOCOL_VERSION = "2025-11-25"
 
 
 def forget_sessions(service: str) -> None:

@@ -112,7 +112,7 @@ def test_initialize_needs_no_server_and_ignores_a_stale_session(client, person):
         headers={"Mcp-Session-Id": "stale-and-invalid"},
     )
 
-    assert resp.json()["result"]["protocolVersion"] == "2025-03-26"
+    assert resp.json()["result"]["protocolVersion"] == "2025-11-25"
     claims = pyjwt.decode(
         resp.headers["mcp-session-id"], settings.JWT_SECRET_KEY, algorithms=["HS256"]
     )
