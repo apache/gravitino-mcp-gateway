@@ -836,9 +836,7 @@ def _created_task(client, upstream, task_id="srv-task-1", **task):
     return _message(resp)["result"]["task"]["taskId"]
 
 
-def test_initialize_offers_tasks_for_tool_calls_and_cancel_but_not_list(
-    client, person
-):
+def test_initialize_offers_tasks_for_tool_calls_and_cancel_but_not_list(client, person):
     resp = client.post("/mcp/trino", json=_jsonrpc("initialize"))
 
     tasks = resp.json()["result"]["capabilities"]["tasks"]

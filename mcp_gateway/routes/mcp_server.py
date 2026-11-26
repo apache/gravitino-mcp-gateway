@@ -58,6 +58,11 @@ from ..oauth_auth import (
     get_user_from_bearer_token,
     get_workload_forward_headers,
 )
+from .mcp_tasks import (
+    TASK_METHODS,
+    unwrap_task_id,
+    wrap_task_ids,
+)
 from .mcp_upstream import (
     MCP_PROTOCOL_VERSION,
     ensure_upstream_session,
@@ -65,11 +70,6 @@ from .mcp_upstream import (
     post_to_upstream,
     read_jsonrpc_message,
     tool_allowed,
-)
-from .mcp_tasks import (
-    TASK_METHODS,
-    unwrap_task_id,
-    wrap_task_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,11 @@ def _timed_out() -> str:
 
 
 def _tool_call_outcome(
-    backend_task: asyncio.Task, request_id, current_user: User, service: str, method: str
+    backend_task: asyncio.Task,
+    request_id,
+    current_user: User,
+    service: str,
+    method: str,
 ):
     """What a finished upstream tool call sends the client: (message, status, error)."""
 
