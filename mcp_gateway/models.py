@@ -233,6 +233,8 @@ class MCPCatalog(Base):
     basic_auth_password_encrypted = Column(
         Text, nullable=True
     )  # Encrypted password for basic auth
+    # Overrides of the RATE_LIMIT_* defaults for this server; see rate_limit.py.
+    rate_limits = Column(JSON, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -373,3 +375,16 @@ class MCPUserPermission(Base):
         if mcp is not None and mcp.is_open_access:
             return False
         return self.expires_at is not None and self.expires_at < datetime.utcnow()
+
+
+class RateLimitWindow(Base):
+    """Calls counted in one window of a rate limit, shared by every replica."""
+
+    __tablename__ = "rate_limit_windows"
+    __table_args__ = (MYSQL_TABLE_OPTIONS,)
+
+    # What is counted, such as user:<id>:<server ID>.
+    key = Column(String(255), primary_key=True)
+    # When the window began, in Unix seconds, a multiple of its length.
+    window_start = Column(Integer, primary_key=True, index=True)
+    count = Column(Integer, nullable=False, default=0)

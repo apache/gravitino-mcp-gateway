@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import SessionLocal
 from .models import AuditLog, DeviceCode, OAuthState, SlackTokenApproval
+from .rate_limit import purge_windows
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def purge_expired_rows(db: Optional[Session] = None) -> int:
             .delete(synchronize_session=False)
             for table in EXPIRING_TABLES
         )
+        deleted += purge_windows(db)
         if settings.AUDIT_RETENTION_DAYS:
             deleted += (
                 db.query(AuditLog)

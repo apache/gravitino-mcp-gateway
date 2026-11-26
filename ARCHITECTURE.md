@@ -120,11 +120,22 @@ as idle; the request's database connection is released before the upstream
 call. Upstream servers must speak Streamable HTTP, and a response is read in
 full before the result is returned to the client.
 
+Calls are rate limited per user, server and tool (`rate_limit.py`), by requests
+per window and by calls in flight, after the caller's access is checked. The
+window counts are rows in `rate_limit_windows`, updated atomically, so they are
+shared by every replica without a service besides the database; the in-flight
+counts live in each replica's memory, because a database count would outlive a
+replica that died mid-call, so those limits are per replica. A call over a
+limit gets a 429 with `Retry-After`. Defaults are `RATE_LIMIT_*` settings, and a
+server's `rate_limits` in the catalog overrides them.
+
 ### Audit and metrics
 
 Every request the gateway passes on is written to `audit_logs` with the caller,
 server, tool, arguments, status and duration, and with `AUDIT_LOG_RESPONSES`
 the response; calls refused for want of access are written as `unauthorized`,
+calls over a rate limit as `rate_limited` (and counted in
+`mcp_gateway_rate_limited_total`),
 admins' changes to servers and service accounts as `admin`, and tool calls whose
 client left as `cancelled`. Arguments with secret-looking names are redacted,
 and arguments or responses longer than 10,000 characters keep a
@@ -154,6 +165,7 @@ created at startup:
 | `mcp_catalog` | Registered MCP servers |
 | `mcp_access_requests`, `mcp_user_permissions` | Access requests and grants |
 | `audit_logs` | Calls |
+| `rate_limit_windows` | Calls counted in the current rate-limit windows |
 | `device_codes`, `oauth_states` | Short-lived sign-in state |
 | `slack_token_approvals` | Pending Slack approvals |
 

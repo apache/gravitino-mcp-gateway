@@ -227,6 +227,19 @@ class Settings(BaseSettings):
 
     # Seconds a tool call may take, such as a long query.
     MCP_TOOL_CALL_TIMEOUT: int = 1200
+    # Rate limits on /mcp/<server ID>; 0 lifts a limit. A server's catalog entry
+    # may override each one. Requests are counted per window in the database, so
+    # they hold across replicas; concurrent calls are counted in each replica.
+    RATE_LIMIT_WINDOW_SECONDS: int = Field(60, ge=1, le=3600)
+    # Requests per window: from one person to one server, to one server from
+    # everyone, and from one person to one tool.
+    RATE_LIMIT_USER_REQUESTS: int = Field(600, ge=0)
+    RATE_LIMIT_SERVER_REQUESTS: int = Field(0, ge=0)
+    RATE_LIMIT_TOOL_REQUESTS: int = Field(0, ge=0)
+    # Calls in flight at once, with the same scopes.
+    RATE_LIMIT_USER_CONCURRENT: int = Field(20, ge=0)
+    RATE_LIMIT_SERVER_CONCURRENT: int = Field(0, ge=0)
+    RATE_LIMIT_TOOL_CONCURRENT: int = Field(0, ge=0)
     # The largest request body the gateway reads, in bytes.
     MAX_REQUEST_BYTES: int = Field(10 * 1024 * 1024, ge=1024)
 

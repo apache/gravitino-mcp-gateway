@@ -18,7 +18,7 @@
 """Admins add, change and delete the MCP servers in the catalog."""
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -39,6 +39,7 @@ from ..models import (
 from ..oauth.token_encryption import get_token_encryption
 from ..oauth.token_manager import RESERVED_SERVICE_IDS
 from ..oauth_auth import require_admin
+from ..rate_limit import validated_overrides
 from .mcp_upstream import forget_sessions
 
 # How the gateway reaches a server for people, and for service accounts. Any
@@ -65,6 +66,12 @@ _REQUIRED_FIELDS = frozenset(
 )
 
 _URL_MAX_LENGTH = 500
+
+_RATE_LIMITS_DESCRIPTION = (
+    "Overrides of the rate limits for this server: user_requests, server_requests, "
+    "tool_requests, user_concurrent, server_concurrent, tool_concurrent, and tools, "
+    "limits by tool name ({'<tool>': {'requests': 1, 'concurrent': 1}}). 0 is no limit."
+)
 
 
 def _upstream_url(value: Optional[str]) -> Optional[str]:
@@ -153,6 +160,9 @@ class CreateMCPRequest(BaseModel):
     )
     basic_auth_username: Optional[str] = None
     basic_auth_password: Optional[str] = Field(None, description="Stored encrypted")
+    rate_limits: Optional[Dict[str, Any]] = Field(
+        None, description=_RATE_LIMITS_DESCRIPTION
+    )
     oauth_client_id: Optional[str] = Field(
         None,
         description=(
@@ -173,6 +183,7 @@ class CreateMCPRequest(BaseModel):
     )
 
     _check_urls = field_validator("mcp_url", "oauth_metadata_url")(_upstream_url)
+    _check_limits = field_validator("rate_limits")(validated_overrides)
 
     @field_validator("service_id")
     @classmethod
@@ -214,6 +225,9 @@ class UpdateMCPRequest(BaseModel):
     service_auth_type: Optional[ServiceAuthType] = None
     basic_auth_username: Optional[str] = None
     basic_auth_password: Optional[str] = None
+    rate_limits: Optional[Dict[str, Any]] = Field(
+        None, description=_RATE_LIMITS_DESCRIPTION + " Null removes them."
+    )
     oauth_client_id: Optional[str] = None
     oauth_client_secret: Optional[str] = Field(
         None, description="An empty string removes the secret"
@@ -221,6 +235,7 @@ class UpdateMCPRequest(BaseModel):
     oauth_metadata_url: Optional[str] = Field(None, max_length=500)
 
     _check_urls = field_validator("mcp_url", "oauth_metadata_url")(_upstream_url)
+    _check_limits = field_validator("rate_limits")(validated_overrides)
 
     @model_validator(mode="after")
     def refuse_nulls(self):
@@ -254,6 +269,7 @@ class MCPResponse(BaseModel):
     auth_type: str = "oauth"
     service_auth_type: str = "passthrough"
     basic_auth_username: Optional[str] = None
+    rate_limits: Optional[Dict[str, Any]] = None
     oauth_client_id: Optional[str] = None
     oauth_client_secret_configured: bool = False
     oauth_metadata_url: Optional[str] = None
