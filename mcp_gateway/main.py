@@ -20,6 +20,7 @@ Gravitino MCP Gateway - main FastAPI application
 """
 
 import asyncio
+import inspect
 import logging
 from contextlib import asynccontextmanager, suppress
 
@@ -57,6 +58,7 @@ from .routes import (
     users,
 )
 from .security_headers import SecurityHeadersMiddleware
+from .telemetry import exclude_from_native_telemetry, setup_telemetry
 
 # Configure logging to show INFO level messages
 logging.basicConfig(
@@ -125,6 +127,14 @@ async def lifespan(_app: FastAPI):
 # The API's interactive docs are for development; production doesn't serve them.
 _DOCS = settings.ENVIRONMENT != "production"
 
+# FastAPI 0.142 and later trace requests themselves once a tracer provider is
+# set (see telemetry.py); older versions have no such option.
+_FASTAPI_TELEMETRY = (
+    {"telemetry": {"exclude": exclude_from_native_telemetry}}
+    if "telemetry" in inspect.signature(FastAPI).parameters
+    else {}
+)
+
 app = FastAPI(
     title="Gravitino MCP Gateway",
     description="Sign-in, access control and audit for MCP servers",
@@ -134,6 +144,7 @@ app = FastAPI(
     redoc_url="/redoc" if _DOCS else None,
     openapi_url="/openapi.json" if _DOCS else None,
     lifespan=lifespan,
+    **_FASTAPI_TELEMETRY,
 )
 
 
@@ -166,6 +177,9 @@ app.add_middleware(
         else None
     ),
 )
+
+# OpenTelemetry traces over OTLP, when OTEL_ENABLED
+setup_telemetry()
 
 # Prometheus metrics — instrument HTTP layer and expose GET /metrics
 if settings.METRICS_ENABLED:

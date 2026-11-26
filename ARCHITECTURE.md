@@ -132,6 +132,18 @@ and arguments or responses longer than 10,000 characters keep a
 calls older than `AUDIT_RETENTION_DAYS`. Admins see all calls, and other users
 see their own. Prometheus metrics are served at `/metrics`.
 
+### Traces
+
+With `OTEL_ENABLED` and the `otel` extra, `telemetry.py` exports OpenTelemetry
+traces over OTLP/HTTP. `mcp_proxy` opens an `mcp.request` span per message
+(server ID, method, tool name; never arguments, tokens or emails), continuing
+the caller's `traceparent`. The token manager adds `mcp.token_exchange` and
+`mcp.token_refresh` spans, and `mcp_upstream.py` an `mcp.upstream` span per
+call to a server, whose `traceparent` it sends on. The code needs only
+`opentelemetry-api`, which FastAPI already depends on, and does nothing when
+tracing is off. FastAPI's own request spans are limited to `/mcp/`, since they
+carry query strings.
+
 ### Optional parts
 
 - **CLI** (`gravitino-mcp`, in `mcp_gateway_cli/`): signs in with the device flow,

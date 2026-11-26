@@ -68,8 +68,8 @@ Python 3.11 or later:
 pip install apache-gravitino-mcp-gateway
 ```
 
-The extras `gcp`, `aws` and `azure` add the cloud secret stores, and `slack`
-the Slack bot, for example `pip install "apache-gravitino-mcp-gateway[gcp]"`.
+The extras `gcp`, `aws` and `azure` add the cloud secret stores, `otel` the
+OpenTelemetry trace export, and `slack` the Slack bot, for example `pip install "apache-gravitino-mcp-gateway[gcp]"`.
 
 The Docker image runs the gateway, with every extra:
 

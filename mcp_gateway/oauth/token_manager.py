@@ -36,6 +36,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import settings
 from ..metrics import record_token_refresh
 from ..models import MCPCatalog, OAuthToken, User
+from ..telemetry import span
 from .mcp_oauth_discovery import parse_token_response, resolve_oauth_metadata
 from .oidc_client import OIDCClient
 from .token_encryption import get_token_encryption
@@ -232,6 +233,15 @@ class TokenManager:
         self, user_id: int, service: str, oauth_token: OAuthToken
     ) -> bool:
         """Refresh an expired token; False when the person must connect again."""
+        with span("mcp.token_refresh", {"mcp.server.id": service}):
+            return await self._refresh_user_token_unspanned(
+                user_id, service, oauth_token
+            )
+
+    async def _refresh_user_token_unspanned(
+        self, user_id: int, service: str, oauth_token: OAuthToken
+    ) -> bool:
+        """The refresh itself."""
         try:
             refresh_token = (await get_token_encryption()).decrypt(
                 oauth_token.refresh_token_encrypted
@@ -495,6 +505,15 @@ class TokenManager:
         self, mcp: MCPCatalog, gateway_token: str, on_behalf_of: bool
     ) -> Dict[str, Any]:
         """Exchange the user's gateway token for a token for ``mcp``."""
+        with span("mcp.token_exchange", {"mcp.server.id": mcp.service_id}):
+            return await self._exchange_token_unspanned(
+                mcp, gateway_token, on_behalf_of
+            )
+
+    async def _exchange_token_unspanned(
+        self, mcp: MCPCatalog, gateway_token: str, on_behalf_of: bool
+    ) -> Dict[str, Any]:
+        """The exchange itself."""
         if on_behalf_of:
             target_scope = mcp.oauth_scopes or f"api://{mcp.audience}/.default"
             logger.info(

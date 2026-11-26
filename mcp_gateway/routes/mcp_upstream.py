@@ -26,6 +26,7 @@ import httpx
 
 from .. import VERSION
 from ..config import settings
+from ..telemetry import set_attribute, span, with_trace_context
 
 logger = logging.getLogger(__name__)
 
@@ -141,19 +142,25 @@ async def post_to_upstream(
     An MCP server answers 404 for a session it does not know, for example after a
     restart, and the client must then initialize a new one (Streamable HTTP).
     """
-    resp = await client.post(mcp_url, json=body, headers=headers)
-    if resp.status_code != 404 or "Mcp-Session-Id" not in headers:
-        return resp
+    with span("mcp.upstream", {"mcp.server.id": service}):
+        resp = await client.post(
+            mcp_url, json=body, headers=with_trace_context(headers)
+        )
+        set_attribute("http.response.status_code", resp.status_code)
+        if resp.status_code != 404 or "Mcp-Session-Id" not in headers:
+            return resp
 
-    logger.info("%s no longer knows the MCP session; starting a new one", service)
-    _upstream_sessions.pop((user_id, service), None)
-    headers = {k: v for k, v in headers.items() if k != "Mcp-Session-Id"}
-    session_id = await ensure_upstream_session(
-        client, mcp_url, headers, {}, user_id, service
-    )
-    if session_id:
-        headers["Mcp-Session-Id"] = session_id
-    return await client.post(mcp_url, json=body, headers=headers)
+        logger.info("%s no longer knows the MCP session; starting a new one", service)
+        _upstream_sessions.pop((user_id, service), None)
+        headers = {k: v for k, v in headers.items() if k != "Mcp-Session-Id"}
+        session_id = await ensure_upstream_session(
+            client, mcp_url, headers, {}, user_id, service
+        )
+        if session_id:
+            headers["Mcp-Session-Id"] = session_id
+        return await client.post(
+            mcp_url, json=body, headers=with_trace_context(headers)
+        )
 
 
 async def _mcp_initialize(
@@ -177,12 +184,14 @@ async def _mcp_initialize(
                 },
                 "id": 0,
             },
-            headers={
-                **extra_headers,
-                **auth_headers,
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/event-stream",
-            },
+            headers=with_trace_context(
+                {
+                    **extra_headers,
+                    **auth_headers,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                }
+            ),
         )
         if resp.status_code >= 400:
             logger.warning(
