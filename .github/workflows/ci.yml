@@ -124,6 +124,28 @@ jobs:
         if: always()
         run: docker compose -f dev/keycloak/docker-compose.yaml down
 
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Lint and render the chart
+        run: |
+          chart=deploy/helm/gravitino-mcp-gateway
+          set -- --set config.JWT_AUDIENCE=a \
+            --set secrets.JWT_SECRET_KEY=0123456789abcdef0123456789abcdef \
+            --set secrets.TOKEN_ENCRYPTION_KEY=x --set secrets.rsaPrivateKey=x \
+            --set secrets.extra.DATABASE_URL=mysql+pymysql://u:p@db/d \
+            --set ingress.enabled=true \
+            --set 'catalog.servers[0].service_id=trino' \
+            --set 'catalog.servers[0].name=Trino' \
+            --set 'catalog.servers[0].mcp_url=http://trino-mcp:8000/mcp'
+          helm lint "${chart}" "$@"
+          helm template release "${chart}" "$@" > /dev/null
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

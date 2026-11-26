@@ -212,6 +212,9 @@ class Settings(BaseSettings):
     # Registers Gravitino's MCP server (mcp-server) as "gravitino" at startup, for example
     # http://gravitino-mcp:8000/mcp. An existing "gravitino" entry is left as it is.
     GRAVITINO_MCP_URL: Optional[str] = None
+    # A JSON file of MCP servers, such as a mounted ConfigMap, applied at every
+    # start and winning over the admin API; see catalog_file.py.
+    MCP_CATALOG_FILE: Optional[str] = None
     # Audience of the tokens Gravitino accepts. Defaults to JWT_AUDIENCE, which forwards
     # users' own tokens; anything else is reached by token exchange.
     GRAVITINO_MCP_AUDIENCE: Optional[str] = None

@@ -34,6 +34,7 @@ from starlette.concurrency import run_in_threadpool
 from . import VERSION
 from .body_limit import BodySizeLimitMiddleware
 from .catalog_defaults import register_gravitino_mcp
+from .catalog_file import load_catalog_file
 from .config import settings
 from .database import Base, SessionLocal, engine
 from .gateway_keys import get_jwks
@@ -94,6 +95,9 @@ async def lifespan(_app: FastAPI):
     logger.info("MCP Gateway server ready - http://%s:%s", settings.HOST, settings.PORT)
     with SessionLocal() as db:
         register_gravitino_mcp(db)
+        if settings.MCP_CATALOG_FILE:
+            # A bad file stops the start, so the pod fails loudly rather than serving a stale catalog.
+            load_catalog_file(db, settings.MCP_CATALOG_FILE)
     slack_task: asyncio.Task | None = None
     purge_task = start_purge_task()
     if settings.SLACK_BOT_TOKEN and settings.SLACK_APP_TOKEN:
