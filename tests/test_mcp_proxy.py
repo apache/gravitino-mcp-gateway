@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# pylint: disable=too-many-lines
+
 """The MCP proxy (mcp_gateway.routes.mcp_server): who may call a server, how the
 gateway signs in to it, and what the caller gets back.
 
