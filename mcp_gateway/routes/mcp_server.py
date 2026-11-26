@@ -30,7 +30,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import httpx
 import jwt as pyjwt
@@ -46,7 +46,13 @@ from ..config import settings
 from ..database import SessionLocal, get_db
 from ..gateway_keys import mint_gateway_jwt
 from ..metrics import metric_method
-from ..models import MCPCatalog, MCPUserPermission, ServiceAccountCredentials, User
+from ..models import (
+    MCPCatalog,
+    MCPUserPermission,
+    MCPVirtualMember,
+    ServiceAccountCredentials,
+    User,
+)
 from ..oauth.mcp_service_auth import (
     build_credential_forward_headers,
     effective_auth_type,
@@ -65,6 +71,13 @@ from .mcp_upstream import (
     post_to_upstream,
     read_jsonrpc_message,
     tool_allowed,
+)
+from .mcp_virtual import (
+    find_virtual,
+    member_tools,
+    merge_tools,
+    route_tool,
+    visible_members,
 )
 
 logger = logging.getLogger(__name__)
@@ -339,7 +352,7 @@ async def mcp_endpoint_info(
     """
     mcp = MCPCatalog.find_active(db, service)
 
-    if not mcp or mcp.is_hidden_from(current_user):
+    if (not mcp or mcp.is_hidden_from(current_user)) and not find_virtual(db, service):
         return JSONResponse(
             {"detail": f"Service '{service}' not found or inactive"}, status_code=404
         )
@@ -564,11 +577,26 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
         )
 
     mcp = MCPCatalog.find_active(db, service)
-    if not mcp or mcp.is_hidden_from(current_user):
+    if mcp and not mcp.is_hidden_from(current_user):
+        return await _call_member(db, request, current_user, mcp, body)
+    virtual = None if mcp else find_virtual(db, service)
+    if virtual is None:
         return _rpc_error(
             request_id, -32001, f"Service '{service}' not found or inactive", 404
         )
+    return await _virtual_proxy(
+        db, request, current_user, service, visible_members(virtual, current_user), body
+    )
 
+
+async def _call_member(  # pylint: disable=too-many-return-statements
+    db: Session, request: Request, current_user: User, mcp: MCPCatalog, body: dict
+):
+    """Send ``body`` to the catalog server ``mcp``, once the caller's access, the
+    gateway's sign-in and the tool filter allow it."""
+    service = mcp.service_id
+    method = body.get("method", "unknown")
+    request_id = body.get("id")
     params = body.get("params", {})
     try:
         _check_access(db, current_user, mcp)
@@ -590,20 +618,9 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
     # connection goes back to the pool for the upstream calls, however long.
     _release(db, mcp, current_user)
 
-    # Some servers need an initialize handshake first, and then their session id.
-    upstream_sid = await ensure_upstream_session(
-        _get_mcp_http_client(),
-        mcp.mcp_url,
-        auth_headers,
-        {
-            **get_workload_forward_headers(request),
-            **get_passthrough_forward_headers(request),
-        },
-        current_user.id,
-        service,
+    auth_headers = await _with_upstream_session(
+        request, current_user, mcp, auth_headers
     )
-    if upstream_sid:
-        auth_headers["Mcp-Session-Id"] = upstream_sid
 
     # Tool calls stream, with heartbeats, so long ones aren't cut off as idle.
     if method == "tools/call":
@@ -617,6 +634,144 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
             request=request,
         )
     return await _forward(db, request, current_user, mcp, body, auth_headers)
+
+
+async def _with_upstream_session(
+    request: Request, user: User, mcp: MCPCatalog, auth_headers: dict
+) -> dict:
+    """``auth_headers`` with the session the server needs, started if need be.
+
+    Some servers need an initialize handshake first, and then their session id.
+    The session is the person's with that server, whichever endpoint reached it.
+    """
+    upstream_sid = await ensure_upstream_session(
+        _get_mcp_http_client(),
+        mcp.mcp_url,
+        auth_headers,
+        {
+            **get_workload_forward_headers(request),
+            **get_passthrough_forward_headers(request),
+        },
+        user.id,
+        mcp.service_id,
+    )
+    if upstream_sid:
+        return {**auth_headers, "Mcp-Session-Id": upstream_sid}
+    return auth_headers
+
+
+async def _virtual_proxy(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    db: Session,
+    request: Request,
+    user: User,
+    service: str,
+    members: List[MCPVirtualMember],
+    body: dict,
+):
+    """Answer a request to a virtual server by its members, each as if called directly."""
+    method = body.get("method", "unknown")
+    request_id = body.get("id")
+    if method == "ping":
+        return JSONResponse({"jsonrpc": "2.0", "id": request_id, "result": {}})
+    if method == "tools/list":
+        return await _virtual_tools_list(db, request, user, service, members, body)
+    if method == "tools/call":
+        params = body["params"]
+        routed = route_tool(members, params["name"])
+        if routed is None:
+            return _rpc_error(
+                request_id,
+                -32601,
+                f"Tool '{params['name']}' is not available on {service}.",
+            )
+        member, tool = routed
+        return await _call_member(
+            db,
+            request,
+            user,
+            member.mcp,
+            {**body, "params": {**params, "name": tool}},
+        )
+    return _rpc_error(request_id, -32601, f"Method '{method}' is not supported")
+
+
+async def _virtual_tools_list(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+    db: Session,
+    request: Request,
+    user: User,
+    service: str,
+    members: List[MCPVirtualMember],
+    body: dict,
+):
+    """The tools of the members the caller may use, merged; each member's list is
+    fetched with its own sign-in, and audited as a call to that member."""
+    request_id = body.get("id")
+    ready = []
+    for member in members:
+        try:
+            _check_access(db, user, member.mcp)
+            ready.append(
+                (member, await _upstream_auth_headers(db, request, user, member.mcp))
+            )
+        except _Refusal:
+            # Not the caller's to use; a virtual server grants nothing.
+            continue
+    _release(db, user, *[m.mcp for m, _ in ready], *[m for m, _ in ready])
+
+    extra = {
+        **get_workload_forward_headers(request),
+        **get_passthrough_forward_headers(request),
+    }
+
+    async def fetch(member: MCPVirtualMember, auth_headers: dict):
+        mcp = member.mcp
+        started = time.time()
+        headers = await _with_upstream_session(request, user, mcp, auth_headers)
+
+        async def post(url, message, hdrs):
+            return await post_to_upstream(
+                _get_mcp_http_client(), url, message, hdrs, user.id, mcp.service_id
+            )
+
+        result = await member_tools(
+            post,
+            mcp.mcp_url,
+            mcp.service_id,
+            request_id,
+            {
+                **extra,
+                **headers,
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        return member, result, _elapsed_ms(started)
+
+    listings = await asyncio.gather(*(fetch(m, h) for m, h in ready))
+    for member, (_, reply, error), duration in listings:
+        await AuditLogger.log_tool_call(
+            db=db,
+            user=user,
+            service=member.mcp.service_id,
+            tool_name="tools/list",
+            method="tools/list",
+            metric_name=metric_method("tools/list"),
+            request_params={},
+            request_headers=extra,
+            response_data=reply,
+            status="error" if error else "success",
+            error_message=error,
+            duration_ms=duration,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    try:
+        tools = merge_tools([(m, result[0]) for m, result, _ in listings])
+    except ValueError as clash:
+        return _rpc_error(request_id, -32000, str(clash))
+    return JSONResponse(
+        {"jsonrpc": "2.0", "id": request_id, "result": {"tools": tools}}
+    )
 
 
 def _initialize_reply(request_id, user: User, service: str) -> JSONResponse:

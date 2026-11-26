@@ -120,6 +120,15 @@ as idle; the request's database connection is released before the upstream
 call. Upstream servers must speak Streamable HTTP, and a response is read in
 full before the result is returned to the client.
 
+A virtual server (`mcp_virtual.py`) is a named group of catalog servers served
+at `/mcp/<ID>`, sharing the URL space of server IDs. `tools/list` is fetched
+from each member the caller may use, concurrently, and merged with each
+member's tool prefix; `tools/call` is routed by the longest matching prefix and
+then takes the same path as a call to the member itself. Access checks, upstream
+sign-in, tool filters and audit are therefore each member's, and a virtual
+server can grant nothing. The upstream session stays per user and member
+server; the client-facing session is a stateless token for the virtual server.
+
 ### Audit and metrics
 
 Every request the gateway passes on is written to `audit_logs` with the caller,
@@ -152,6 +161,7 @@ created at startup:
 | `oauth_tokens` | Encrypted tokens, one per user and server, and the person's own gateway token as `gateway` |
 | `service_account_credentials` | Registered service-account identities and their servers |
 | `mcp_catalog` | Registered MCP servers |
+| `mcp_virtual_servers`, `mcp_virtual_members` | Virtual servers and their members, with tool prefixes |
 | `mcp_access_requests`, `mcp_user_permissions` | Access requests and grants |
 | `audit_logs` | Calls |
 | `device_codes`, `oauth_states` | Short-lived sign-in state |

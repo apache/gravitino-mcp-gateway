@@ -373,3 +373,49 @@ class MCPUserPermission(Base):
         if mcp is not None and mcp.is_open_access:
             return False
         return self.expires_at is not None and self.expires_at < datetime.utcnow()
+
+
+class MCPVirtualServer(Base):
+    """A named group of catalog servers served at one URL, /mcp/<service_id>."""
+
+    __tablename__ = "mcp_virtual_servers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Shares the URL space of MCPCatalog.service_id; the admin API keeps them apart.
+    service_id = Column(String(100), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    members = relationship(
+        "MCPVirtualMember",
+        cascade="all, delete-orphan",
+        order_by="MCPVirtualMember.id",
+        lazy="selectin",
+    )
+
+    __table_args__ = (MYSQL_TABLE_OPTIONS,)
+
+
+class MCPVirtualMember(Base):
+    """A catalog server in a virtual server, and the prefix of its tool names."""
+
+    __tablename__ = "mcp_virtual_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    virtual_id = Column(
+        Integer, ForeignKey("mcp_virtual_servers.id"), nullable=False, index=True
+    )
+    mcp_id = Column(Integer, ForeignKey("mcp_catalog.id"), nullable=False, index=True)
+    # Put before the server's tool names; empty leaves them as they are.
+    tool_prefix = Column(String(50), nullable=False, default="")
+
+    mcp = relationship("MCPCatalog", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("virtual_id", "mcp_id", name="unique_virtual_member"),
+        MYSQL_TABLE_OPTIONS,
+    )

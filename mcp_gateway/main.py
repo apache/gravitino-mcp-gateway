@@ -53,6 +53,7 @@ from .routes import (
     mcp_catalog,
     mcp_oauth,
     mcp_server,
+    mcp_virtual,
     user_tokens,
     users,
 )
@@ -183,6 +184,7 @@ for router in (
     mcp_catalog.router,
     admin.router,
     mcp_admin.router,
+    mcp_virtual.router,
     mcp_access.router,
     mcp_oauth.router,
     user_tokens.router,
