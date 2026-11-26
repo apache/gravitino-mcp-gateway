@@ -58,6 +58,11 @@ from ..oauth_auth import (
     get_user_from_bearer_token,
     get_workload_forward_headers,
 )
+from .mcp_tasks import (
+    TASK_METHODS,
+    unwrap_task_id,
+    wrap_task_ids,
+)
 from .mcp_upstream import (
     MCP_PROTOCOL_VERSION,
     ensure_upstream_session,
@@ -94,11 +99,13 @@ def _create_session(user_id: int, service: str) -> str:
 def _session_claims(session_id: str) -> Optional[dict]:
     """The claims of an unexpired session ID the gateway issued, or None."""
     try:
-        return pyjwt.decode(
+        claims = pyjwt.decode(
             session_id, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
     except pyjwt.InvalidTokenError:
         return None
+    # A task token is signed with the same key; it is not a session.
+    return None if "t" in claims else claims
 
 
 def _invalid_request(body: Any) -> Optional[str]:
@@ -177,7 +184,13 @@ def _timed_out() -> str:
     return f"Backend MCP timeout after {settings.MCP_TOOL_CALL_TIMEOUT}s"
 
 
-def _tool_call_outcome(backend_task: asyncio.Task, request_id, service: str):
+def _tool_call_outcome(
+    backend_task: asyncio.Task,
+    request_id,
+    current_user: User,
+    service: str,
+    method: str,
+):
     """What a finished upstream tool call sends the client: (message, status, error)."""
 
     def failed(code: int, message: str):
@@ -186,11 +199,16 @@ def _tool_call_outcome(backend_task: asyncio.Task, request_id, service: str):
     try:
         backend_response = backend_task.result()
         backend_response.raise_for_status()
-        message = {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            **read_jsonrpc_message(backend_response),
-        }
+        message = wrap_task_ids(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                **read_jsonrpc_message(backend_response),
+            },
+            current_user.id,
+            service,
+            method,
+        )
     except httpx.TimeoutException:
         return failed(-32000, _timed_out())
     except httpx.HTTPStatusError as e:
@@ -294,7 +312,7 @@ def _stream_tool_call(  # pylint: disable=too-many-arguments
                         break
                     yield ": heartbeat\n\n"
                 message, status, error = _tool_call_outcome(
-                    backend_task, request_id, service
+                    backend_task, request_id, current_user, service, method
                 )
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("Streaming tool call error for %s", service)
@@ -578,6 +596,8 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
                 -32601,
                 f"Tool '{params.get('name', '')}' is not available on {service}.",
             )
+        if method.startswith("tasks/"):
+            body = _task_request(body, current_user, service)
     except _Refusal as refusal:
         await log_refusal(
             db, current_user, service, method, params, request, refusal.message
@@ -605,8 +625,9 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
     if upstream_sid:
         auth_headers["Mcp-Session-Id"] = upstream_sid
 
-    # Tool calls stream, with heartbeats, so long ones aren't cut off as idle.
-    if method == "tools/call":
+    # Tool calls stream, with heartbeats, so long ones aren't cut off as idle;
+    # so does tasks/result, which waits for the task to finish.
+    if method in ("tools/call", "tasks/result"):
         return _stream_tool_call(
             body=body,
             request_id=request_id,
@@ -619,6 +640,20 @@ async def mcp_proxy(  # pylint: disable=too-many-return-statements
     return await _forward(db, request, current_user, mcp, body, auth_headers)
 
 
+def _task_request(body: dict, user: User, service: str) -> dict:
+    """``body``, a tasks/* request, with the server's ID for the task in place of
+    the caller's; raises _Refusal if it is not one the gateway offers or the
+    task is not this person's on this server."""
+    method = body["method"]
+    if method not in TASK_METHODS:
+        raise _Refusal(-32601, f"{method} is not supported.")
+    params = body.get("params", {})
+    upstream_id = unwrap_task_id(params.get("taskId"), user.id, service)
+    if upstream_id is None:
+        raise _Refusal(-32602, "Unknown task")
+    return {**body, "params": {**params, "taskId": upstream_id}}
+
+
 def _initialize_reply(request_id, user: User, service: str) -> JSONResponse:
     """The gateway's own answer to initialize, with a new session for ``user``."""
     return JSONResponse(
@@ -627,7 +662,10 @@ def _initialize_reply(request_id, user: User, service: str) -> JSONResponse:
             "id": request_id,
             "result": {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
+                "capabilities": {
+                    "tools": {},
+                    "tasks": {"requests": {"tools": {"call": {}}}, "cancel": {}},
+                },
                 "serverInfo": {"name": f"MCP Gateway {service}", "version": VERSION},
             },
         },
@@ -684,11 +722,16 @@ async def _forward(  # pylint: disable=too-many-arguments,too-many-return-statem
 
             # The reply may be JSON or an SSE stream. An empty reply gets the
             # request's id, so clients can match it.
-            response_data = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                **read_jsonrpc_message(backend_response),
-            }
+            response_data = wrap_task_ids(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    **read_jsonrpc_message(backend_response),
+                },
+                current_user.id,
+                service,
+                method,
+            )
 
             # Hide the tools that the server's filter removes.
             result = response_data.get("result")

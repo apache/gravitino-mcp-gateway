@@ -515,6 +515,9 @@ The gateway uses Slack only when these settings are set:
   for messages a server starts: `GET /mcp/<server ID>` answers 405.
 - The gateway answers `initialize` itself and offers only tools, so clients don't see a server's
   prompts or resources.
+- MCP tasks work for tool calls: `tasks/get`, `tasks/result` and `tasks/cancel`, with a task ID
+  that is the caller's own on that server. `tasks/list` and task status notifications are not
+  offered. A task ID is a signed token that expires with the task, or after 24 hours.
 - The CLI's proxy doesn't start at login on Windows.
 - The database schema is created at startup but not migrated between releases: a release that
   changes it needs a new database.
