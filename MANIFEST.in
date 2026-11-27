@@ -16,5 +16,5 @@
 #
 
 # The sdist carries the tests, and the files they read, so that they run from it.
-graft tests
+recursive-include tests *.py
 include uv.lock LICENSE.bin
