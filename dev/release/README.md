@@ -48,6 +48,8 @@ Each file in `dist` has a detached signature (`.asc`) and a SHA-512 checksum (`.
 - ASF Infra has set up `apache/gravitino-mcp-gateway` on Docker Hub, and the `DOCKERHUB_USER` and
   `DOCKERHUB_TOKEN` secrets that let this repository's workflows push to it. The repository's
   description says that its images are convenience binaries, not ASF releases.
+- Your GitHub login is in the list of release managers in
+  `.github/workflows/publish-docker.yml`, which only they may run.
 
 Every script that changes something outside your machine asks first, and with `-n` does
 everything else and changes nothing outside it. They work in `~/gravitino-mcp-gateway-release`, or

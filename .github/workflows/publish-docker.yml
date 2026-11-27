@@ -42,7 +42,12 @@ permissions:
 jobs:
   publish:
     name: Publish Docker image
-    if: github.repository == 'apache/gravitino-mcp-gateway'
+    # Only these release managers may publish, and only from main. Add a release
+    # manager's GitHub login here, in a pull request, before their first release.
+    if: >-
+      github.repository == 'apache/gravitino-mcp-gateway' &&
+      github.ref == 'refs/heads/main' &&
+      contains(fromJSON('["bharos", "jerryshao"]'), github.triggering_actor)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
