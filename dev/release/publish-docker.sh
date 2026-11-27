@@ -20,8 +20,9 @@
 # its source release in dist/release, and pushes it to Docker Hub as
 # apache/gravitino-mcp-gateway:<version>, and also :latest with -l.
 #
-# Sign in first with `docker login`, as an account that may push to
-# apache/gravitino-mcp-gateway.
+# The Publish Docker image workflow runs it with the Docker Hub account ASF
+# Infra provides. To run it yourself, sign in first with `docker login`, as an
+# account that may push to apache/gravitino-mcp-gateway.
 
 source "$(dirname "$0")/common.sh"
 

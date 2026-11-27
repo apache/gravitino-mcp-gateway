@@ -45,8 +45,11 @@ Each file in `dist` has a detached signature (`.asc`) and a SHA-512 checksum (`.
 - You can upload to the `apache-gravitino-mcp-gateway` project on PyPI, with an API token in
   `TWINE_PASSWORD` and `TWINE_USERNAME=__token__`, or in `~/.pypirc`. The first upload creates the
   project; then add the other PMC members as owners.
-- Your Docker Hub account may push to `apache/gravitino-mcp-gateway`, which ASF Infra sets up.
-  The repository's description says that its images are convenience binaries, not ASF releases.
+- ASF Infra has set up `apache/gravitino-mcp-gateway` on Docker Hub, and the `DOCKERHUB_USER` and
+  `DOCKERHUB_TOKEN` secrets that let this repository's workflows push to it. The repository's
+  description says that its images are convenience binaries, not ASF releases.
+- Your GitHub login is in the list of release managers in
+  `.github/workflows/publish-docker.yml`, which only they may run.
 
 Every script that changes something outside your machine asks first, and with `-n` does
 everything else and changes nothing outside it. They work in `~/gravitino-mcp-gateway-release`, or
@@ -95,12 +98,17 @@ The examples release 0.1.0, from release candidate 1.
 5. **Publish it.** This tags `v0.1.0`, moves the files to `dist/release`, uploads the voted wheel
    and sdist to PyPI, and offers to remove older releases from `dist/release`. The move makes the
    release official; if a later step fails, fix it and run the script again, which skips what is
-   done. `-l` tags the image `latest` too, for the newest release only:
+   done:
 
    ```shell
    dev/release/release-publish.sh 0.1.0 1
-   dev/release/publish-docker.sh -l 0.1.0
    ```
+
+   Then publish the Docker image: run the **Publish Docker image** workflow from this repository's
+   Actions tab, with the version, and `latest` for the newest release only. It runs
+   `dev/release/publish-docker.sh`, which builds the image for amd64 and arm64 from the source
+   release in `dist/release`. Run it first as a dry run, which builds without pushing, then again
+   without.
 
 6. **Announce it**, an hour later, once the files are on `downloads.apache.org`:
    - Add the release to Gravitino's download page. Link the source release through
