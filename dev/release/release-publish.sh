@@ -106,7 +106,7 @@ done
 cat <<EOF
 
 Done. Next, as dev/release/README.md describes:
-  - publish the Docker image: dev/release/publish-docker.sh -l $VERSION
+  - publish the Docker image: run the Publish Docker image workflow for $VERSION
   - after an hour, update the download page and send the announcement
   - record the release at https://reporter.apache.org/addrelease.html?gravitino
 EOF
